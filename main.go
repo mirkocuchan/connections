@@ -6,6 +6,7 @@ import(
 	"github.com/mirkocuchan/connections/internal/config"
 	"github.com/mirkocuchan/connections/internal/database"
 	"log"
+	"net/http"
 )
 //la estructura va a guardar el tipo "*database.Queries" que es mi dbQueries
 type state struct {
@@ -33,6 +34,14 @@ func main(){
 	programState := &state{
 		db:  dbQueries,
 		cfg: &cfg,
+	}
+	//inicializo la libreta con los handlers, me va a permitir usar las rutas y las funciones
+	programState.handlers()
+	
+	//escuchando requests a traves de un puerto
+	err = http.ListenAndServe(cfg.PORT, nil)
+	if err != nil{
+		log.Fatalf("port listening error: %v", err)
 	}
 
 }
