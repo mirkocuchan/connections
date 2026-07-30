@@ -8,6 +8,8 @@ import(
 	"time"
 	"encoding/json"
 	"github.com/google/uuid"
+	"strings"
+	"github.com/lib/pq"
 )
 
 //net/http exige que un handler tenga la firma (ResponseWriter, *Request). lo hacemos a register un método de state para tener acceso a db y cfg desde adentro sin recibirlos como parámetro,
@@ -63,13 +65,14 @@ func (s *state) register(w http.ResponseWriter, r *http.Request){
 		RespondWithError(w, 400, "error hashing the password")
 		return
 	}
-
+	//asigno un Date a un campo que espera time.Time? NO. necesito hacer una conversión: time.Time(user.DateOfBirth). 
+	//válida porque Date tiene la misma estructura interna que time.Time.
 	userParams := database.CreateUserParams{
 		UserID: user.UserID,
 		Username: user.Username,
 		Email: user.Email,
 		PasswordHash: hashedPassword,
-		DateOfBirth: user.DateOfBirth,
+		DateOfBirth: time.Time(user.DateOfBirth),
 		CreatedAt: user.CreatedAt,
 		UpdatedAt: user.UpdatedAt,
 	}
