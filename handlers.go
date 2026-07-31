@@ -36,14 +36,11 @@ func (d *Date) UnmarshalJSON(data []byte) error{
     return nil
 }
 
-type User struct {
-	UserID uuid.UUID
+type receivedUser struct {
 	Username string
 	Email string
 	Password string
 	DateOfBirth Date
-	CreatedAt time.Time
-	UpdatedAt time.Time
 }
 
 func (s *state) register(w http.ResponseWriter, r *http.Request){
@@ -55,7 +52,7 @@ func (s *state) register(w http.ResponseWriter, r *http.Request){
 		return
 	}
 
-	var user User
+	var user receivedUser
 	if err := json.Unmarshal(userData, &user); err != nil {
         RespondWithError(w, 400, "error unmarshalling JSON")
 		return
@@ -65,16 +62,18 @@ func (s *state) register(w http.ResponseWriter, r *http.Request){
 		RespondWithError(w, 400, "error hashing the password")
 		return
 	}
+	newUUID := uuid.New()
+	lastUpdated := time.Now().UTC()
 	//asigno un Date a un campo que espera time.Time? NO. necesito hacer una conversión: time.Time(user.DateOfBirth). 
 	//válida porque Date tiene la misma estructura interna que time.Time.
 	userParams := database.CreateUserParams{
-		UserID: user.UserID,
+		UserID: newUUID,
 		Username: user.Username,
 		Email: user.Email,
 		PasswordHash: hashedPassword,
 		DateOfBirth: time.Time(user.DateOfBirth),
-		CreatedAt: user.CreatedAt,
-		UpdatedAt: user.UpdatedAt,
+		CreatedAt: lastUpdated,
+		UpdatedAt: lastUpdated,
 	}
 	
 	_, err = s.db.CreateUser(r.Context(), userParams)
