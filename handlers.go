@@ -62,21 +62,16 @@ func (s *state) register(w http.ResponseWriter, r *http.Request){
 		RespondWithError(w, 400, "error hashing the password")
 		return
 	}
-	newUUID := uuid.New()
-	lastUpdated := time.Now().UTC()
 	//asigno un Date a un campo que espera time.Time? NO. necesito hacer una conversión: time.Time(user.DateOfBirth). 
 	//válida porque Date tiene la misma estructura interna que time.Time.
 	userParams := database.CreateUserParams{
-		UserID: newUUID,
 		Username: user.Username,
 		Email: user.Email,
 		PasswordHash: hashedPassword,
 		DateOfBirth: time.Time(user.DateOfBirth),
-		CreatedAt: lastUpdated,
-		UpdatedAt: lastUpdated,
-	}
+		}
 	
-	_, err = s.db.CreateUser(r.Context(), userParams)
+	createdUser, err := s.db.CreateUser(r.Context(), userParams)
 	//cuando Postgres rechaza un INSERT por violar el UNIQUE de username o email, no te devuelve un error genérico de Go. 
 	//te devuelve un error que tiene información específica de Postgres: un código de error estandarizado. 
 	//ese código para "unique violation" es siempre 23505. el paquete lib/pq convierte esa respuesta de PostgreSQL en una estructura de Go (struct) llamada pq.Error.
@@ -100,8 +95,23 @@ func (s *state) register(w http.ResponseWriter, r *http.Request){
 			return
 		}
 	}
-	
-	w.WriteHeader(http.StatusCreated)
+	type responseUser struct {
+		ID uuid.UUID `json:"id"`
+		Username string `json:"username"`
+		Email string `json:"email"`
+		DateOfBirth Date `json:"date_of_birth"`
+		CreatedAt time.Time `json:"created_at"`
+		UpdatedAt time.Time `json:"updated_at"`
+	}
+
+	RespondWithJSON(w, http.StatusCreated, responseUser{
+		ID: createdUser.UserID,
+		Username: createdUser.Username,
+		Email: createdUser.Email,
+		DateOfBirth: Date(createdUser.DateOfBirth),
+		CreatedAt: createdUser.CreatedAt,
+		UpdatedAt: createdUser.UpdatedAt,
+	})
 }
 
 //el state es el receiver, (el objeto que está ejecutando el método)

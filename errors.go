@@ -29,15 +29,23 @@ func RespondWithError(w http.ResponseWriter, code int, message string) {
 
     w.Write(jsonErrorText)
 }
-
-//func RespondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
-//    w.Header().Set("Content-Type", "application/json")
-//    w.WriteHeader(code)
-//    //json.NewEncoder(w) dice: "todo lo que proceses, no lo guardes en memoria, mandalo directamente al socket de la respuesta HTTP, al nuevo Encoder
-//    //.Encode mira qué tiene adentro payload usando reflection, transforma el dato a formato JSON, y hace el stream directo: a medida que genera los bytes en 
-//	  //formato JSON, los escribe en w
-
-//    if err := json.NewEncoder(w).Encode(payload); err != nil {
-//        log.Printf("Error respondiendo JSON: %v", err)
-//    }
+//if err := json.NewEncoder(w).Encode(payload); err != nil {
+//	log.Printf("Error respondiendo JSON: %v", err)
 //}
+//json.NewEncoder(w) dice: "todo lo que proceses, no lo guardes en memoria, mandalo directamente al socket de la respuesta HTTP, al nuevo Encoder
+//.Encode mira qué tiene adentro payload usando reflection, transforma el dato a formato JSON, y hace el stream directo: a medida que genera los bytes en 
+//formato JSON, los escribe en w
+
+func RespondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
+	response, err := json.Marshal(payload)
+	if err != nil {
+        log.Printf("marshal error")
+		w.WriteHeader(http.StatusInternalServerError)
+        return
+    }
+
+    w.Header().Set("Content-Type", "application/json")
+    w.WriteHeader(code)
+    w.Write(response)
+	log.Printf("no error")
+}
