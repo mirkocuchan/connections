@@ -6,7 +6,11 @@ import(
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"time"
+	"github.com/google/uuid"
+	"github.com/golang-jwt/jwt/v5"
 )
+
 //hasheamos la contraseña que viene en forma de string
 func HashPassword(password string) (string, error){
 	hashedPassword, err := argon2id.CreateHash(password, argon2id.DefaultParams)
@@ -64,7 +68,7 @@ func ValidateJWT(tokenString, tokenSecret string) (uuid.UUID, error){
 	if err != nil {
 		return uuid.Nil, errors.New("couldn't parse the JWT")
 	}
-	uuidString := token.Subject  //tenemos el uuid en formato string, lo convertimos a uuid.UUID
+	uuidString := claims.Subject  //tenemos el uuid en formato string, lo convertimos a uuid.UUID
 	parsedUUID, err := uuid.Parse(uuidString)
 	if err != nil {
 		return uuid.Nil, errors.New("couldn't parse the UUID from the JWT")
@@ -72,10 +76,13 @@ func ValidateJWT(tokenString, tokenSecret string) (uuid.UUID, error){
 	return parsedUUID, nil
 }
 
-func MakeRefreshToken() string{
+func MakeRefreshToken() (string, error){
 	randomString := make([]byte, 32)
-	rand.Read(randomString)
-	return hex.EncodeToString(randomString)
+	ans, err := rand.Read(randomString)
+	if err != nil{
+		return "", errors.New("error filling the array with random bytes")
+	}
+	return hex.EncodeToString(randomString), nil
 } 
 //why do we need to make a refresh token? because we don't want to store the user's password in the database. we want to store a refresh token that is generated randomly and is unique for each user. 
 //this way, we can authenticate the user without having to store their password. how does make([]byte, 32) work? it creates a slice of bytes with a length of 32. rand.Read fills the slice with random bytes. hex.EncodeToString converts the slice of bytes to a string of hexadecimal characters.

@@ -1,0 +1,29 @@
+package main
+
+import(
+	"time"
+	"strings"
+)
+//net/http exige que un handler tenga la firma (ResponseWriter, *Request). lo hacemos a register un método de state para tener acceso a db y cfg desde adentro sin recibirlos como parámetro,
+//porque no permite tener state de parametro al ser un handler
+
+//creamos un tipo igual que time.Time. por que? porque cuando viene un time.Time, unmarshal no sabe que hacer. va a usar unmarshalJSON, pero ve "YYYY-MMM-DDD" y le falta información
+//no sabe como unmarshallear, por eso creamos este type. encoding/json pregunta: este tipo tiene unmarshalJSON function? por eso la creamos, para que pueda unmarshalear
+type Date time.Time
+
+//Date es el R3ECEIVER porque el método necesita saber sobre qué instancia de Date está actuando.
+func (d *Date) UnmarshalJSON(data []byte) error{
+	//convertir los bytes JSON a un string, sin comillas. nosotros recibimos con comillas la fecha esa y la convertimos en string
+    convertedString := strings.Trim(string(data), `"`)
+
+    //parsear usando el formato YYYY-MM-DD, crea un time.Time con ese estilo para la fecha, pero con la hora y todos los detalles que necesitamos
+    modifiedTime, err := time.Parse("2006-01-02", convertedString)
+    if err != nil {
+        return err
+    }
+
+    //guardar el resultado en el receiver
+	//estamos escribiendo directamente en el lugar de memoria donde vive user.DateOfBirth
+    *d = Date(modifiedTime)
+    return nil
+}
