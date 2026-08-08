@@ -90,9 +90,77 @@ func (s *state) register(w http.ResponseWriter, r *http.Request){
 	})
 }
 
+func (s *state) login(w http.ResponseWriter, r *http.Request){
+	type User struct{
+		Email string    `json:"email"`
+		Password string `json:"password"`
+	}
+	decoder := json.NewDecoder(r.Body)
+	params := User{}
+	
+	err := decoder.Decode(&params)
+	if err != nil {
+		RespondWithError(w, 400, "couldn't decode the body")
+		return
+	}
+	user, err := s.db.GetUserByEmail(r.Context(), params.Email)
+	if err != nil{
+		RespondWithError(w, 400, "Incorrect email or password")
+		return
+	}
+
+	rightPassword, err := auth.CheckPasswordHash(params.Password, user.PasswordHash)
+	if err != nil{
+		RespondWithError(w, 400, "Incorrect email or password")
+		return
+	}
+	if rightPassword == false{
+		RespondWithError(w, 401, "Incorrect email or password")
+		return
+	}
+		
+	expiresIn := s.cfg.AccessTokenDuration
+	newJWT, err := auth.MakeJWT(user.UserID, s.cfg.JWTSecret, expiresIn)
+	if err != nil{
+		RespondWithError(w, 400, "couldnt't generate the JWT")
+		return
+	}
+	refreshTokenString := auth.MakeRefreshToken()
+	hashedRefreshToken := auth.HashRefreshToken(refreshTokenString)
+	expiresAt := time.Now().Add(s.cfg.RefreshTokenDuration)
+
+	newRefreshToken := database.CreateRefreshTokenParams{
+		TokenHash: hashedRefreshToken,
+		UserID: user.UserID,
+		ExpiresAt: expiresAt,
+	}
+
+	_, err = s.db.CreateRefreshToken(r.Context(), newRefreshToken)
+	if err != nil{
+		RespondWithError(w, 401, "couldn't generate a refresh token")
+		return
+	}
+	type responseUser struct {
+		ID uuid.UUID `json:"id"`
+		Username string `json:"username"`
+		Email string `json:"email"`
+		DateOfBirth Date `json:"date_of_birth"`
+		CreatedAt time.Time `json:"created_at"`
+		UpdatedAt time.Time `json:"updated_at"`
+		Token string `json:"token"`
+		RefreshToken string `json:"refresh_token"`
+	}
+
+	RespondWithJSON(w, 200, responseUser{ID: user.UserID, Username: user.Username, Email: user.Email,
+	DateOfBirth: Date(user.DateOfBirth), CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt, Token: newJWT,
+	RefreshToken: refreshTokenString})
+	return
+}
+
 //el state es el receiver, (el objeto que está ejecutando el método)
 //cuando handlers() escribe s.register, ese s es el mismo que le llegó a handlers(),  necesita recibir la instancia de alguna manera 
 func (s *state) handlers() {
 	//handle toma si o si del tipo handler, y como s.register no lo es, la convertimos con handlerfunc
 	http.Handle("POST /register", http.HandlerFunc(s.register))
+	http.Handle("POST /login", http.HandlerFunc(s.login))
 }
