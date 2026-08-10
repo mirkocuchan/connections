@@ -157,10 +157,63 @@ func (s *state) login(w http.ResponseWriter, r *http.Request){
 	return
 }
 
+func (s *state) refresh(w http.ResponseWriter, r *http.Request){
+	refreshToken, err := auth.GetBearerToken(r.Header)
+	if err != nil{
+		RespondWithError(w, 401, "Unauthorized")
+        return
+	}
+
+	hashedRefreshToken := auth.HashRefreshToken(refreshToken)
+	refreshTokenData, err := s.db.GetRefreshTokenWithHash(r.Context(), hashedRefreshToken)
+	if err != nil{
+		RespondWithError(w, 400, "couldn't find the refresh token in the database")
+		return
+	}
+	if refreshTokenData.ExpiresAt.Before(time.Now()){
+		RespondWithError(w, 400, "the refresh token has expired")
+		return
+	}
+	if refreshTokenData.RevokedAt.Valid{
+		RespondWithError(w, 400, "the refresh token has been revoked")
+		return
+	}
+	//si existe me fijo si está revocado o expirado. si no, genero un nuevo JWT y un nuevo refresh token, y devuelvo ambos al cliente.
+	expiresIn := s.cfg.AccessTokenDuration
+	newJWT, err := auth.MakeJWT(refreshTokenData.UserID, s.cfg.JWTSecret, expiresIn)
+	if err != nil{
+		RespondWithError(w, 400, "couldnt't generate the JWT")
+		return
+	}
+
+	refreshTokenString := auth.MakeRefreshToken()
+	newHashedRefreshToken := auth.HashRefreshToken(refreshTokenString)
+	expiresAt := time.Now().Add(s.cfg.RefreshTokenDuration)
+
+	newRefreshToken := database.CreateRefreshTokenParams{
+		TokenHash: newHashedRefreshToken,
+		UserID: refreshTokenData.UserID,
+		ExpiresAt: expiresAt,
+	}
+	_, err = s.db.CreateRefreshToken(r.Context(), newRefreshToken)
+	if err != nil{
+		RespondWithError(w, 401, "couldn't generate a refresh token")
+		return
+	}
+	err = s.db.RevokeRefreshToken(r.Context(), hashedRefreshToken)
+	if err != nil{
+		RespondWithError(w, 400, "couldn't revoke the old refresh token")
+		return
+	}
+
+	RespondWithJSON(w, 200, map[string]string{"token": newJWT, "refresh_token": refreshTokenString})
+}
+
 //el state es el receiver, (el objeto que está ejecutando el método)
 //cuando handlers() escribe s.register, ese s es el mismo que le llegó a handlers(),  necesita recibir la instancia de alguna manera 
 func (s *state) handlers() {
 	//handle toma si o si del tipo handler, y como s.register no lo es, la convertimos con handlerfunc
 	http.Handle("POST /register", http.HandlerFunc(s.register))
 	http.Handle("POST /login", http.HandlerFunc(s.login))
+	http.Handle("POST /refresh", http.HandlerFunc(s.refresh))
 }
