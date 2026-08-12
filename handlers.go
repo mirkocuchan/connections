@@ -209,6 +209,22 @@ func (s *state) refresh(w http.ResponseWriter, r *http.Request){
 	RespondWithJSON(w, 200, map[string]string{"token": newJWT, "refresh_token": refreshTokenString})
 }
 
+func (s *state) logout(w http.ResponseWriter, r *http.Request){
+	refreshToken, err := auth.GetBearerToken(r.Header)
+	if err != nil{
+		RespondWithError(w, 401, "Unauthorized")
+        return
+	}
+
+	hashedRefreshToken := auth.HashRefreshToken(refreshToken)
+	err = s.db.RevokeRefreshToken(r.Context(), hashedRefreshToken)
+	if err != nil{
+		RespondWithError(w, 400, "couldn't revoke the refresh token")
+		return
+	}
+	RespondWithJSON(w, 200, map[string]string{"message": "refresh token revoked successfully"})
+}
+
 //el state es el receiver, (el objeto que está ejecutando el método)
 //cuando handlers() escribe s.register, ese s es el mismo que le llegó a handlers(),  necesita recibir la instancia de alguna manera 
 func (s *state) handlers() {
@@ -216,4 +232,5 @@ func (s *state) handlers() {
 	http.Handle("POST /register", http.HandlerFunc(s.register))
 	http.Handle("POST /login", http.HandlerFunc(s.login))
 	http.Handle("POST /refresh", http.HandlerFunc(s.refresh))
+	http.Handle("POST /logout", http.HandlerFunc(s.logout))
 }
