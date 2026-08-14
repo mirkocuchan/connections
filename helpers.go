@@ -27,3 +27,18 @@ func (d *Date) UnmarshalJSON(data []byte) error{
     *d = Date(modifiedTime)
     return nil
 }
+//función que recibe un request y devuelve el userID del contexto de la request. si no hay userID, devuelve uuid.Nil y un error
+func (s *state) getUserIDFromContext(r *http.Request) (uuid.UUID, error) {
+	userIDValue := r.Context().Value(userIDKey)
+	if userIDValue == nil {
+		return uuid.Nil, errors.New("user ID not found in context")
+	}
+    //type assertion: userIDValue es de tipo interface{}, necesitamos convertirlo a uuid.UUID
+    //por que es del tipo inteface{}? porque context.WithValue devuelve un contexto con un valor de tipo interface{}, que puede ser cualquier cosa. cuando lo recuperamos, lo obtenemos como interface{} y necesitamos convertirlo al tipo que sabemos que es.
+	userID, ok := userIDValue.(uuid.UUID)
+    if !ok {
+        return uuid.Nil, errors.New("user ID in context is not of type uuid.UUID")    
+    }
+
+	return userID, nil
+}

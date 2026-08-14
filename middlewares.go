@@ -3,10 +3,7 @@ package main
 import(
 	"net/http"
 	"github.com/mirkocuchan/connections/internal/auth"
-	"encoding/json"
-	"github.com/google/uuid"
 	"context"
-	"github.com/lib/pq"
 )
 type contextKey string
 

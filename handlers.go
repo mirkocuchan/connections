@@ -225,6 +225,37 @@ func (s *state) logout(w http.ResponseWriter, r *http.Request){
 	RespondWithJSON(w, 200, map[string]string{"message": "refresh token revoked successfully"})
 }
 
+func (s *state) getMe(w http.ResponseWriter, r *http.Request){
+	//quiero obtener el userID del contexto de la request. el middleware authMiddleware lo puso ahí, así que si llegamos a este punto, el userID debería estar en el contexto.
+	userID, err := s.getUserIDFromContext(r)
+	if err != nil{
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
+	user, err := s.db.GetUserByID(r.Context(), userID)
+	if err != nil{
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
+	type responseUser struct {
+		ID uuid.UUID `json:"id"`
+		Username string `json:"username"`
+		Email string `json:"email"`
+		DateOfBirth Date `json:"date_of_birth"`
+		CreatedAt time.Time `json:"created_at"`
+		UpdatedAt time.Time `json:"updated_at"`
+	}
+	
+	RespondWithJSON(w, 200, responseUser{
+		ID: user.UserID,
+		Username: user.Username,
+		Email: user.Email,
+		DateOfBirth: Date(user.DateOfBirth),
+		CreatedAt: user.CreatedAt,
+		UpdatedAt: user.UpdatedAt,
+	})
+}
+	
 //el state es el receiver, (el objeto que está ejecutando el método)
 //cuando handlers() escribe s.register, ese s es el mismo que le llegó a handlers(),  necesita recibir la instancia de alguna manera 
 func (s *state) handlers() {
@@ -233,4 +264,11 @@ func (s *state) handlers() {
 	http.Handle("POST /login", http.HandlerFunc(s.login))
 	http.Handle("POST /refresh", http.HandlerFunc(s.refresh))
 	http.Handle("POST /logout", http.HandlerFunc(s.logout))
+
+	http.Handle("GET /me", s.authMiddleware(http.HandlerFunc(s.getMe)))
+	//s.getMe es un handler, pero no cumple la interfaz http.Handler. entonces lo envolvemos en http.HandlerFunc para que cumpla la interfaz.
+	//s.authMiddleware es un middleware que toma un handler y devuelve un handler. entonces le pasamos el handler envuelto en http.HandlerFunc, y nos devuelve otro handler que valida el JWT antes de ejecutar s.getMe.
+	//entonces, cuando llega una request a /me, primero pasa por s.authMiddleware, que valida el JWT y pone el userID en el contexto de la request, y luego ejecuta s.getMe con ese contexto.
+	//s.getMe puede acceder al userID del contexto de la request gracias a s.authMiddleware. si no hubiera pasado por el middleware, s.getMe no podría acceder al userID y devolvería un error 401.
+	//resumen: s.getMe (tu handler) → envuelto en http.HandlerFunc (para que cumpla la interfaz http.Handler que authMiddleware espera recibir) → envuelto en s.authMiddleware (que valida el JWT antes de dejarlo pasar) → registrado con http.Handle.
 }
