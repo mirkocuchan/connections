@@ -315,6 +315,36 @@ func (s *state) createChat(w http.ResponseWriter, r *http.Request){
 	RespondWithJSON(w, 200, map[string]string{"message": "chat already exists", "chat_id": chat.ChatID.String()})
 }
 
+func (s *state) createMessage(w http.ResponseWriter, r *http.Request){
+	//message sender
+	userID, err := s.getUserIDFromContext(r)
+	if err != nil{
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
+
+	chatIDString := r.PathValue("chatID")
+	chatID, err := uuid.Parse(chatIDString)
+	if err != nil {
+    	RespondWithError(w, 404, "Invalid chat ID")
+    	return
+	}
+
+	newMessageParams := database.CreateMessageParams{
+		ChatID:   chatID,
+		SenderID: userID,
+		Content:  r.body().Content,
+	}
+
+	newMessage, err := s.db.CreateMessage(r.Context(), newMessageParams)
+	if err != nil {
+		RespondWithError(w, 500, "couldn't create the message in the database")
+		return
+	}
+
+	RespondWithJSON(w, 200, newMessage)
+}
+
 //el state es el receiver, (el objeto que está ejecutando el método)
 //cuando handlers() escribe s.register, ese s es el mismo que le llegó a handlers(),  necesita recibir la instancia de alguna manera 
 func (s *state) handlers() {
@@ -323,7 +353,9 @@ func (s *state) handlers() {
 	http.Handle("POST /login", http.HandlerFunc(s.login))
 	http.Handle("POST /refresh", http.HandlerFunc(s.refresh))
 	http.Handle("POST /logout", http.HandlerFunc(s.logout))
+
 	http.Handle("POST /chats", s.authMiddleware(http.HandlerFunc(s.createChat)))
+	http.Handle("POST /chats/{id}/messages", s.authMiddleware(http.HandlerFunc(s.createMessage)))
 
 	http.Handle("GET /me", s.authMiddleware(http.HandlerFunc(s.getMe)))
 	//s.getMe es un handler, pero no cumple la interfaz http.Handler. entonces lo envolvemos en http.HandlerFunc para que cumpla la interfaz.
