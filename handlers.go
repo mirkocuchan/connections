@@ -255,7 +255,66 @@ func (s *state) getMe(w http.ResponseWriter, r *http.Request){
 		UpdatedAt: user.UpdatedAt,
 	})
 }
+
+type createChatRequest struct {
+    OtherUserID uuid.UUID `json:"other_user_id"`
+}
+
+func (s *state) createChat(w http.ResponseWriter, r *http.Request){
+	defer r.Body.Close()
+
+	userData, err := io.ReadAll(r.Body)
+	if err != nil{
+		RespondWithError(w, 400, "couldn't read the request body")
+		return
+	}
 	
+	var body createChatRequest
+	if err := json.Unmarshal(userData, &body); err != nil {
+        RespondWithError(w, 400, "error unmarshalling JSON")
+		return
+    }
+	//getting the userID of the user that is being talked to
+
+	//quiero obtener el userID del contexto de la request. el middleware authMiddleware lo puso ahí, así que si llegamos a este punto, el userID debería estar en el contexto.
+	userID, err := s.getUserIDFromContext(r)
+	if err != nil{
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
+
+	userIDParams := database.GetChatByUserIDsParams{
+		UserOneID: userID,
+		UserTwoID: body.OtherUserID, // Reemplaza con el userID del otro usuario
+	}
+
+	chat, err := s.db.GetChatByUserIDs(r.Context(), userIDParams)
+	
+	if err == sql.ErrNoRows{
+		//si no hay chat, lo creo. si hay chat, devuelvo el chat existente.
+		newChatParams := database.CreateChatParams{
+			UserOneID: userID,
+			UserTwoID: body.OtherUserID, // Reemplaza con el userID del otro usuario
+		}
+
+		newChat, err := s.db.CreateChat(r.Context(), newChatParams)
+		if err != nil{
+			RespondWithError(w, 500, "couldn't create the chat in the database")
+			return
+		}
+			
+		RespondWithJSON(w, 200, map[string]string{"message": "chat created successfully", "chat_id": newChat.ChatID.String()})
+		return
+	}
+	
+	if err != nil{
+		RespondWithError(w, 500, "couldn't find the chat in the database")
+		return
+	}
+
+	RespondWithJSON(w, 200, map[string]string{"message": "chat already exists", "chat_id": chat.ChatID.String()})
+}
+
 //el state es el receiver, (el objeto que está ejecutando el método)
 //cuando handlers() escribe s.register, ese s es el mismo que le llegó a handlers(),  necesita recibir la instancia de alguna manera 
 func (s *state) handlers() {
@@ -264,6 +323,7 @@ func (s *state) handlers() {
 	http.Handle("POST /login", http.HandlerFunc(s.login))
 	http.Handle("POST /refresh", http.HandlerFunc(s.refresh))
 	http.Handle("POST /logout", http.HandlerFunc(s.logout))
+	http.Handle("POST /chats", s.authMiddleware(http.HandlerFunc(s.createChat)))
 
 	http.Handle("GET /me", s.authMiddleware(http.HandlerFunc(s.getMe)))
 	//s.getMe es un handler, pero no cumple la interfaz http.Handler. entonces lo envolvemos en http.HandlerFunc para que cumpla la interfaz.
