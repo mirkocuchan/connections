@@ -315,7 +315,26 @@ func (s *state) createChat(w http.ResponseWriter, r *http.Request){
 	RespondWithJSON(w, 200, map[string]string{"message": "chat already exists", "chat_id": chat.ChatID.String()})
 }
 
+type createMessage struct {
+    Content string `json:"content"`
+}
+
 func (s *state) createMessage(w http.ResponseWriter, r *http.Request){
+	defer r.Body.Close()
+
+	userData, err := io.ReadAll(r.Body)
+	if err != nil{
+		RespondWithError(w, 400, "couldn't read the request body")
+		return
+	}
+	
+	var body createMessage
+	if err := json.Unmarshal(userData, &body); err != nil {
+        RespondWithError(w, 400, "error unmarshalling JSON")
+		return
+    }
+	//getting the content of the message that is being sent
+
 	//message sender
 	userID, err := s.getUserIDFromContext(r)
 	if err != nil{
@@ -329,20 +348,44 @@ func (s *state) createMessage(w http.ResponseWriter, r *http.Request){
     	RespondWithError(w, 404, "Invalid chat ID")
     	return
 	}
+	chat, err := s.db.GetChatByID(r.Context(), chatID)
+	if err != nil{
+		RespondWithError(w, 404, "Chat not found")
+		return
+	}
+	if chat.UserOneID != userID && chat.UserTwoID != userID{
+		RespondWithError(w, 403, "you are not a participant of this chat")
+		return
+	}//me fijo si pertenece a alguno de los dos usuarios del chat. si no, devuelvo 403 forbidden.
 
 	newMessageParams := database.CreateMessageParams{
 		ChatID:   chatID,
 		SenderID: userID,
-		Content:  r.body().Content,
+		Content:  body.Content,
 	}
-
+	//creamos nuevo mensaje en la base de datos. si hay error, devolvemos 500. si no, devolvemos el mensaje creado con 201.
 	newMessage, err := s.db.CreateMessage(r.Context(), newMessageParams)
 	if err != nil {
 		RespondWithError(w, 500, "couldn't create the message in the database")
 		return
 	}
 
-	RespondWithJSON(w, 200, newMessage)
+	type messageResponse struct {
+		MessageID uuid.UUID `json:"message_id"`
+		ChatID    uuid.UUID `json:"chat_id"`
+		SenderID  uuid.UUID `json:"sender_id"`
+		Content   string    `json:"content"`
+		CreatedAt time.Time `json:"created_at"`
+		UpdatedAt time.Time `json:"updated_at"`
+	}
+
+	RespondWithJSON(w, 201, messageResponse{
+		MessageID: newMessage.MessageID,
+		ChatID:    newMessage.ChatID,
+		SenderID:  newMessage.SenderID,
+		Content:   newMessage.Content,
+		CreatedAt: newMessage.CreatedAt,
+		UpdatedAt: newMessage.UpdatedAt,})
 }
 
 //el state es el receiver, (el objeto que está ejecutando el método)
