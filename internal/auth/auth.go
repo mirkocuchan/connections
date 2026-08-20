@@ -3,12 +3,6 @@ package auth
 import(
 	"errors"
 	"github.com/alexedwards/argon2id"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
-	"time"
-	"github.com/google/uuid"
-	"github.com/golang-jwt/jwt/v5"
 )
 
 //hasheamos la contraseña que viene en forma de string

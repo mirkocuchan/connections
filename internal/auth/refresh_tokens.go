@@ -1,15 +1,17 @@
-package main
+package auth
 
 import(
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
 	"crypto/sha256"
+	"strings"
+	"net/http"
 )
 
 func MakeRefreshToken() (string, error){
 	randomString := make([]byte, 32)
-	ans, err := rand.Read(randomString)
+	_, err := rand.Read(randomString)
 	if err != nil{
 		return "", errors.New("error filling the array with random bytes")
 	}

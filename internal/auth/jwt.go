@@ -1,15 +1,9 @@
 package auth
 import(
 	"errors"
-	"github.com/alexedwards/argon2id"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
 	"time"
 	"github.com/google/uuid"
 	"github.com/golang-jwt/jwt/v5"
-	"net/http"
-	"strings"
 )
 
 func MakeJWT(userID uuid.UUID, tokenSecret string, expiresIn time.Duration) (string, error){
@@ -39,7 +33,7 @@ func ValidateJWT(tokenString, tokenSecret string) (uuid.UUID, error){
 	//what is this? jwt.ParseWithClaims takes a token string, a claims object, and a function that returns the key to use for signing the token. 
 	//it parses the token string and populates the claims object with the claims from the token. if the token is valid, it returns the claims object. if the token is invalid, it returns an error.
 
-	token, err := jwt.ParseWithClaims(
+	_, err := jwt.ParseWithClaims(
 		tokenString, 
 		&claims, 
 		func(token *jwt.Token) (interface{}, error){

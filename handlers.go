@@ -8,8 +8,8 @@ import(
 	"time"
 	"encoding/json"
 	"github.com/google/uuid"
-	"strings"
 	"github.com/lib/pq"
+	"database/sql"
 )
 
 type receivedUser struct {
@@ -125,7 +125,11 @@ func (s *state) login(w http.ResponseWriter, r *http.Request){
 		RespondWithError(w, 400, "couldnt't generate the JWT")
 		return
 	}
-	refreshTokenString := auth.MakeRefreshToken()
+	refreshTokenString, err := auth.MakeRefreshToken()
+	if err != nil{
+		RespondWithError(w, 400, "couldn't generate the refresh token")
+		return
+	}
 	hashedRefreshToken := auth.HashRefreshToken(refreshTokenString)
 	expiresAt := time.Now().Add(s.cfg.RefreshTokenDuration)
 
@@ -186,7 +190,11 @@ func (s *state) refresh(w http.ResponseWriter, r *http.Request){
 		return
 	}
 
-	refreshTokenString := auth.MakeRefreshToken()
+	refreshTokenString, err := auth.MakeRefreshToken()
+	if err != nil{
+		RespondWithError(w, 400, "couldn't generate the refresh token")
+		return
+	}
 	newHashedRefreshToken := auth.HashRefreshToken(refreshTokenString)
 	expiresAt := time.Now().Add(s.cfg.RefreshTokenDuration)
 
@@ -388,6 +396,56 @@ func (s *state) createMessage(w http.ResponseWriter, r *http.Request){
 		UpdatedAt: newMessage.UpdatedAt,})
 }
 
+func (s *state) getMessages(w http.ResponseWriter, r *http.Request){
+	//message sender
+	userID, err := s.getUserIDFromContext(r)
+	if err != nil{
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
+
+	chatIDString := r.PathValue("chatID")
+	chatID, err := uuid.Parse(chatIDString)
+	if err != nil {
+    	RespondWithError(w, 404, "Invalid chat ID")
+    	return
+	}
+	chat, err := s.db.GetChatByID(r.Context(), chatID)
+	if err != nil{
+		RespondWithError(w, 404, "Chat not found")
+		return
+	}
+	if chat.UserOneID != userID && chat.UserTwoID != userID{
+		RespondWithError(w, 403, "you are not a participant of this chat")
+		return
+	}//me fijo si pertenece a alguno de los dos usuarios del chat. si no, devuelvo 403 forbidden.
+
+	messages, err := s.db.GetMessagesByChatID(r.Context(), chatID)
+	if err != nil{
+		RespondWithError(w, 500, "couldn't get the messages from the database")
+		return
+	}
+	type messageResponse struct {
+		MessageID uuid.UUID `json:"message_id"`
+		ChatID    uuid.UUID `json:"chat_id"`
+		SenderID  uuid.UUID `json:"sender_id"`
+		Content   string    `json:"content"`
+		CreatedAt time.Time `json:"created_at"`
+		UpdatedAt time.Time `json:"updated_at"`
+	}
+	messagesResponse := []messageResponse{}
+	for _, message := range messages{
+		messagesResponse = append(messagesResponse, messageResponse{
+			MessageID: message.MessageID,
+			ChatID:    message.ChatID,
+			SenderID:  message.SenderID,
+			Content:   message.Content,
+			CreatedAt: message.CreatedAt,
+			UpdatedAt: message.UpdatedAt,})
+	}
+
+	RespondWithJSON(w, 200, messagesResponse)
+}
 //el state es el receiver, (el objeto que está ejecutando el método)
 //cuando handlers() escribe s.register, ese s es el mismo que le llegó a handlers(),  necesita recibir la instancia de alguna manera 
 func (s *state) handlers() {
@@ -398,7 +456,8 @@ func (s *state) handlers() {
 	http.Handle("POST /logout", http.HandlerFunc(s.logout))
 
 	http.Handle("POST /chats", s.authMiddleware(http.HandlerFunc(s.createChat)))
-	http.Handle("POST /chats/{id}/messages", s.authMiddleware(http.HandlerFunc(s.createMessage)))
+	http.Handle("POST /chats/{chatID}/messages", s.authMiddleware(http.HandlerFunc(s.createMessage)))
+	http.Handle("GET /chats/{chatID}/messages", s.authMiddleware(http.HandlerFunc(s.getMessages)))
 
 	http.Handle("GET /me", s.authMiddleware(http.HandlerFunc(s.getMe)))
 	//s.getMe es un handler, pero no cumple la interfaz http.Handler. entonces lo envolvemos en http.HandlerFunc para que cumpla la interfaz.
