@@ -446,6 +446,39 @@ func (s *state) getMessages(w http.ResponseWriter, r *http.Request){
 
 	RespondWithJSON(w, 200, messagesResponse)
 }
+
+func (s *state) deleteChat(w http.ResponseWriter, r *http.Request){
+	//the one soliciting the deletion
+	userID, err := s.getUserIDFromContext(r)
+	if err != nil{
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
+
+	chatIDString := r.PathValue("chatID")
+	chatID, err := uuid.Parse(chatIDString)
+	if err != nil {
+    	RespondWithError(w, 404, "Invalid chat ID")
+    	return
+	}
+	chat, err := s.db.GetChatByID(r.Context(), chatID)
+	if err != nil{
+		RespondWithError(w, 404, "Chat not found")
+		return
+	}
+	if chat.UserOneID != userID && chat.UserTwoID != userID{
+		RespondWithError(w, 403, "you are not a participant of this chat, you can't delete it")
+		return
+	}//me fijo si pertenece a alguno de los dos usuarios del chat. si no, devuelvo 403 forbidden.
+	
+	err = s.db.DeleteChatByID(r.Context(), chatID)
+	if err != nil{
+		RespondWithError(w, 500, "could not delete the chat")
+		return
+	}
+	RespondWithJSON(w, 200, map[string]string{"message": "chat deleted", "chat_id": chat.ChatID.String()})
+}
+
 //el state es el receiver, (el objeto que está ejecutando el método)
 //cuando handlers() escribe s.register, ese s es el mismo que le llegó a handlers(),  necesita recibir la instancia de alguna manera 
 func (s *state) handlers() {
@@ -458,7 +491,8 @@ func (s *state) handlers() {
 	http.Handle("POST /chats", s.authMiddleware(http.HandlerFunc(s.createChat)))
 	http.Handle("POST /chats/{chatID}/messages", s.authMiddleware(http.HandlerFunc(s.createMessage)))
 	http.Handle("GET /chats/{chatID}/messages", s.authMiddleware(http.HandlerFunc(s.getMessages)))
-
+	http.Handle("DELETE /chats/{chatID}", s.authMiddleware(http.HandlerFunc(s.deleteChat)))
+	
 	http.Handle("GET /me", s.authMiddleware(http.HandlerFunc(s.getMe)))
 	//s.getMe es un handler, pero no cumple la interfaz http.Handler. entonces lo envolvemos en http.HandlerFunc para que cumpla la interfaz.
 	//s.authMiddleware es un middleware que toma un handler y devuelve un handler. entonces le pasamos el handler envuelto en http.HandlerFunc, y nos devuelve otro handler que valida el JWT antes de ejecutar s.getMe.
