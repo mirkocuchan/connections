@@ -11,6 +11,25 @@ import (
 	"github.com/google/uuid"
 )
 
+type Card struct {
+	CardID             uuid.UUID
+	ChatID             uuid.UUID
+	CreatorID          uuid.UUID
+	SubjectID          uuid.UUID
+	Nickname           sql.NullString
+	NotesOnSubject     sql.NullString
+	DisplayNameVisible sql.NullBool
+	DateOfBirthVisible sql.NullBool
+	CiudadVisible      sql.NullBool
+	PaisVisible        sql.NullBool
+	FotoVisible        sql.NullBool
+	BioVisible         sql.NullBool
+	InteresesVisible   sql.NullBool
+	IdiomasVisible     sql.NullBool
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+}
+
 type Chat struct {
 	ChatID    uuid.UUID
 	UserOneID uuid.UUID
@@ -45,4 +64,18 @@ type User struct {
 	DateOfBirth  time.Time
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
+	DisplayName  sql.NullString
+	Bio          sql.NullString
+	Ciudad       sql.NullString
+	Pais         sql.NullString
+	Intereses    sql.NullString
+	Idiomas      sql.NullString
+}
+
+type UserPhoto struct {
+	PhotoID   uuid.UUID
+	UserID    uuid.UUID
+	PhotoUrl  string
+	Position  int32
+	CreatedAt time.Time
 }

@@ -20,7 +20,7 @@ VALUES (
     $3,
     $4
 )
-RETURNING user_id, username, email, password_hash, date_of_birth, created_at, updated_at
+RETURNING user_id, username, email, password_hash, date_of_birth, created_at, updated_at, display_name, bio, ciudad, pais, intereses, idiomas
 `
 
 type CreateUserParams struct {
@@ -46,12 +46,18 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.DateOfBirth,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DisplayName,
+		&i.Bio,
+		&i.Ciudad,
+		&i.Pais,
+		&i.Intereses,
+		&i.Idiomas,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT user_id, username, email, password_hash, date_of_birth, created_at, updated_at FROM users WHERE email = $1
+SELECT user_id, username, email, password_hash, date_of_birth, created_at, updated_at, display_name, bio, ciudad, pais, intereses, idiomas FROM users WHERE email = $1
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
@@ -65,12 +71,18 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.DateOfBirth,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DisplayName,
+		&i.Bio,
+		&i.Ciudad,
+		&i.Pais,
+		&i.Intereses,
+		&i.Idiomas,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT user_id, username, email, password_hash, date_of_birth, created_at, updated_at FROM users WHERE user_id = $1
+SELECT user_id, username, email, password_hash, date_of_birth, created_at, updated_at, display_name, bio, ciudad, pais, intereses, idiomas FROM users WHERE user_id = $1
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, userID uuid.UUID) (User, error) {
@@ -84,6 +96,12 @@ func (q *Queries) GetUserByID(ctx context.Context, userID uuid.UUID) (User, erro
 		&i.DateOfBirth,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DisplayName,
+		&i.Bio,
+		&i.Ciudad,
+		&i.Pais,
+		&i.Intereses,
+		&i.Idiomas,
 	)
 	return i, err
 }
