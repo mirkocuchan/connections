@@ -20,7 +20,7 @@ VALUES (
     $2,
     $3
 )
-RETURNING card_id, chat_id, creator_id, subject_id, nickname, notes_on_subject, display_name_visible, date_of_birth_visible, ciudad_visible, pais_visible, foto_visible, bio_visible, intereses_visible, idiomas_visible, created_at, updated_at
+RETURNING card_id, chat_id, creator_id, subject_id, nickname, notes_on_subject, display_name_visible, date_of_birth_visible, city_visible, country_visible, photos_visible, bio_visible, hobbies_visible, languages_visible, created_at, updated_at
 `
 
 type CreateUserCardParams struct {
@@ -41,12 +41,12 @@ func (q *Queries) CreateUserCard(ctx context.Context, arg CreateUserCardParams) 
 		&i.NotesOnSubject,
 		&i.DisplayNameVisible,
 		&i.DateOfBirthVisible,
-		&i.CiudadVisible,
-		&i.PaisVisible,
-		&i.FotoVisible,
+		&i.CityVisible,
+		&i.CountryVisible,
+		&i.PhotosVisible,
 		&i.BioVisible,
-		&i.InteresesVisible,
-		&i.IdiomasVisible,
+		&i.HobbiesVisible,
+		&i.LanguagesVisible,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -62,6 +62,40 @@ func (q *Queries) DeleteCard(ctx context.Context, cardID uuid.UUID) error {
 	return err
 }
 
+const getCardWithChatCreatorAndSubject = `-- name: GetCardWithChatCreatorAndSubject :one
+SELECT card_id, chat_id, creator_id, subject_id, nickname, notes_on_subject, display_name_visible, date_of_birth_visible, city_visible, country_visible, photos_visible, bio_visible, hobbies_visible, languages_visible, created_at, updated_at FROM cards WHERE chat_id = $1 AND creator_id = $2 AND subject_id = $3
+`
+
+type GetCardWithChatCreatorAndSubjectParams struct {
+	ChatID    uuid.UUID
+	CreatorID uuid.UUID
+	SubjectID uuid.UUID
+}
+
+func (q *Queries) GetCardWithChatCreatorAndSubject(ctx context.Context, arg GetCardWithChatCreatorAndSubjectParams) (Card, error) {
+	row := q.db.QueryRowContext(ctx, getCardWithChatCreatorAndSubject, arg.ChatID, arg.CreatorID, arg.SubjectID)
+	var i Card
+	err := row.Scan(
+		&i.CardID,
+		&i.ChatID,
+		&i.CreatorID,
+		&i.SubjectID,
+		&i.Nickname,
+		&i.NotesOnSubject,
+		&i.DisplayNameVisible,
+		&i.DateOfBirthVisible,
+		&i.CityVisible,
+		&i.CountryVisible,
+		&i.PhotosVisible,
+		&i.BioVisible,
+		&i.HobbiesVisible,
+		&i.LanguagesVisible,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getCardWithSubjectData = `-- name: GetCardWithSubjectData :one
 SELECT 
     c.card_id,
@@ -72,19 +106,19 @@ SELECT
     c.notes_on_subject,
     c.display_name_visible,
     c.date_of_birth_visible,
-    c.ciudad_visible,
-    c.pais_visible,
-    c.foto_visible,
+    c.city_visible,
+    c.country_visible,
+    c.photos_visible,
     c.bio_visible,
-    c.intereses_visible,
-    c.idiomas_visible,
+    c.hobbies_visible,
+    c.languages_visible,
     u.display_name,
     u.date_of_birth,
-    u.ciudad,
-    u.pais,
+    u.city,
+    u.country,
     u.bio,
-    u.intereses,
-    u.idiomas
+    u.hobbies,
+    u.languages
 FROM cards c
 JOIN users u ON u.user_id = c.subject_id
 WHERE c.card_id = $1
@@ -99,19 +133,19 @@ type GetCardWithSubjectDataRow struct {
 	NotesOnSubject     sql.NullString
 	DisplayNameVisible sql.NullBool
 	DateOfBirthVisible sql.NullBool
-	CiudadVisible      sql.NullBool
-	PaisVisible        sql.NullBool
-	FotoVisible        sql.NullBool
+	CityVisible        sql.NullBool
+	CountryVisible     sql.NullBool
+	PhotosVisible      sql.NullBool
 	BioVisible         sql.NullBool
-	InteresesVisible   sql.NullBool
-	IdiomasVisible     sql.NullBool
+	HobbiesVisible     sql.NullBool
+	LanguagesVisible   sql.NullBool
 	DisplayName        sql.NullString
 	DateOfBirth        time.Time
-	Ciudad             sql.NullString
-	Pais               sql.NullString
+	City               sql.NullString
+	Country            sql.NullString
 	Bio                sql.NullString
-	Intereses          sql.NullString
-	Idiomas            sql.NullString
+	Hobbies            sql.NullString
+	Languages          sql.NullString
 }
 
 func (q *Queries) GetCardWithSubjectData(ctx context.Context, cardID uuid.UUID) (GetCardWithSubjectDataRow, error) {
@@ -126,25 +160,25 @@ func (q *Queries) GetCardWithSubjectData(ctx context.Context, cardID uuid.UUID) 
 		&i.NotesOnSubject,
 		&i.DisplayNameVisible,
 		&i.DateOfBirthVisible,
-		&i.CiudadVisible,
-		&i.PaisVisible,
-		&i.FotoVisible,
+		&i.CityVisible,
+		&i.CountryVisible,
+		&i.PhotosVisible,
 		&i.BioVisible,
-		&i.InteresesVisible,
-		&i.IdiomasVisible,
+		&i.HobbiesVisible,
+		&i.LanguagesVisible,
 		&i.DisplayName,
 		&i.DateOfBirth,
-		&i.Ciudad,
-		&i.Pais,
+		&i.City,
+		&i.Country,
 		&i.Bio,
-		&i.Intereses,
-		&i.Idiomas,
+		&i.Hobbies,
+		&i.Languages,
 	)
 	return i, err
 }
 
 const getUserCardByChatAndUsers = `-- name: GetUserCardByChatAndUsers :one
-SELECT card_id, chat_id, creator_id, subject_id, nickname, notes_on_subject, display_name_visible, date_of_birth_visible, ciudad_visible, pais_visible, foto_visible, bio_visible, intereses_visible, idiomas_visible, created_at, updated_at FROM cards WHERE card_id = $1 AND creator_id = $2 AND subject_id = $3
+SELECT card_id, chat_id, creator_id, subject_id, nickname, notes_on_subject, display_name_visible, date_of_birth_visible, city_visible, country_visible, photos_visible, bio_visible, hobbies_visible, languages_visible, created_at, updated_at FROM cards WHERE card_id = $1 AND creator_id = $2 AND subject_id = $3
 `
 
 type GetUserCardByChatAndUsersParams struct {
@@ -165,12 +199,12 @@ func (q *Queries) GetUserCardByChatAndUsers(ctx context.Context, arg GetUserCard
 		&i.NotesOnSubject,
 		&i.DisplayNameVisible,
 		&i.DateOfBirthVisible,
-		&i.CiudadVisible,
-		&i.PaisVisible,
-		&i.FotoVisible,
+		&i.CityVisible,
+		&i.CountryVisible,
+		&i.PhotosVisible,
 		&i.BioVisible,
-		&i.InteresesVisible,
-		&i.IdiomasVisible,
+		&i.HobbiesVisible,
+		&i.LanguagesVisible,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -178,7 +212,7 @@ func (q *Queries) GetUserCardByChatAndUsers(ctx context.Context, arg GetUserCard
 }
 
 const getUserCardsByCreator = `-- name: GetUserCardsByCreator :many
-SELECT card_id, chat_id, creator_id, subject_id, nickname, notes_on_subject, display_name_visible, date_of_birth_visible, ciudad_visible, pais_visible, foto_visible, bio_visible, intereses_visible, idiomas_visible, created_at, updated_at FROM cards WHERE creator_id = $1
+SELECT card_id, chat_id, creator_id, subject_id, nickname, notes_on_subject, display_name_visible, date_of_birth_visible, city_visible, country_visible, photos_visible, bio_visible, hobbies_visible, languages_visible, created_at, updated_at FROM cards WHERE creator_id = $1
 `
 
 func (q *Queries) GetUserCardsByCreator(ctx context.Context, creatorID uuid.UUID) ([]Card, error) {
@@ -199,12 +233,12 @@ func (q *Queries) GetUserCardsByCreator(ctx context.Context, creatorID uuid.UUID
 			&i.NotesOnSubject,
 			&i.DisplayNameVisible,
 			&i.DateOfBirthVisible,
-			&i.CiudadVisible,
-			&i.PaisVisible,
-			&i.FotoVisible,
+			&i.CityVisible,
+			&i.CountryVisible,
+			&i.PhotosVisible,
 			&i.BioVisible,
-			&i.InteresesVisible,
-			&i.IdiomasVisible,
+			&i.HobbiesVisible,
+			&i.LanguagesVisible,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -259,12 +293,12 @@ UPDATE cards SET nickname = NULL,
     notes_on_subject = NULL,
     display_name_visible = false,
     date_of_birth_visible = false,
-    ciudad_visible = false,
-    pais_visible = false,
-    foto_visible = false,
+    city_visible = false,
+    country_visible = false,
+    photos_visible = false,
     bio_visible = false,
-    intereses_visible = false,
-    idiomas_visible = false,
+    hobbies_visible = false,
+    languages_visible = false,
     updated_at = Now()
 WHERE card_id = $1
 `
@@ -274,18 +308,90 @@ func (q *Queries) ResetCard(ctx context.Context, cardID uuid.UUID) error {
 	return err
 }
 
+const revealBioField = `-- name: RevealBioField :exec
+UPDATE cards SET bio_visible = true WHERE card_id = $1
+`
+
+func (q *Queries) RevealBioField(ctx context.Context, cardID uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, revealBioField, cardID)
+	return err
+}
+
+const revealBirthField = `-- name: RevealBirthField :exec
+UPDATE cards SET date_of_birth_visible = true WHERE card_id = $1
+`
+
+func (q *Queries) RevealBirthField(ctx context.Context, cardID uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, revealBirthField, cardID)
+	return err
+}
+
+const revealCityField = `-- name: RevealCityField :exec
+UPDATE cards SET city_visible = true WHERE card_id = $1
+`
+
+func (q *Queries) RevealCityField(ctx context.Context, cardID uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, revealCityField, cardID)
+	return err
+}
+
+const revealCountryField = `-- name: RevealCountryField :exec
+UPDATE cards SET country_visible = true WHERE card_id = $1
+`
+
+func (q *Queries) RevealCountryField(ctx context.Context, cardID uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, revealCountryField, cardID)
+	return err
+}
+
 const revealFields = `-- name: RevealFields :exec
-UPDATE cards SET display_name_visible = true, date_of_birth_visible = true, ciudad_visible = true,
-    pais_visible = true,
-    foto_visible = true,
+UPDATE cards SET display_name_visible = true, date_of_birth_visible = true, city_visible = true,
+    country_visible = true,
+    photos_visible = true,
     bio_visible = true,
-    intereses_visible = true,
-    idiomas_visible = true
+    hobbies_visible = true,
+    languages_visible = true
 WHERE card_id = $1
 `
 
 func (q *Queries) RevealFields(ctx context.Context, cardID uuid.UUID) error {
 	_, err := q.db.ExecContext(ctx, revealFields, cardID)
+	return err
+}
+
+const revealHobbiesField = `-- name: RevealHobbiesField :exec
+UPDATE cards SET hobbies_visible = true WHERE card_id = $1
+`
+
+func (q *Queries) RevealHobbiesField(ctx context.Context, cardID uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, revealHobbiesField, cardID)
+	return err
+}
+
+const revealLanguagesField = `-- name: RevealLanguagesField :exec
+UPDATE cards SET languages_visible = true WHERE card_id = $1
+`
+
+func (q *Queries) RevealLanguagesField(ctx context.Context, cardID uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, revealLanguagesField, cardID)
+	return err
+}
+
+const revealNameField = `-- name: RevealNameField :exec
+UPDATE cards SET display_name_visible = true WHERE card_id = $1
+`
+
+func (q *Queries) RevealNameField(ctx context.Context, cardID uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, revealNameField, cardID)
+	return err
+}
+
+const revealPhotosField = `-- name: RevealPhotosField :exec
+UPDATE cards SET photos_visible = true WHERE card_id = $1
+`
+
+func (q *Queries) RevealPhotosField(ctx context.Context, cardID uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, revealPhotosField, cardID)
 	return err
 }
 

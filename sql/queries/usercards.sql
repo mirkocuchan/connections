@@ -21,12 +21,12 @@ UPDATE cards SET nickname = NULL,
     notes_on_subject = NULL,
     display_name_visible = false,
     date_of_birth_visible = false,
-    ciudad_visible = false,
-    pais_visible = false,
-    foto_visible = false,
+    city_visible = false,
+    country_visible = false,
+    photos_visible = false,
     bio_visible = false,
-    intereses_visible = false,
-    idiomas_visible = false,
+    hobbies_visible = false,
+    languages_visible = false,
     updated_at = Now()
 WHERE card_id = $1;
 
@@ -34,13 +34,37 @@ WHERE card_id = $1;
 UPDATE cards SET nickname = $1, updated_at = Now()  WHERE card_id = $2;
 
 -- name: RevealFields :exec
-UPDATE cards SET display_name_visible = true, date_of_birth_visible = true, ciudad_visible = true,
-    pais_visible = true,
-    foto_visible = true,
+UPDATE cards SET display_name_visible = true, date_of_birth_visible = true, city_visible = true,
+    country_visible = true,
+    photos_visible = true,
     bio_visible = true,
-    intereses_visible = true,
-    idiomas_visible = true
+    hobbies_visible = true,
+    languages_visible = true
 WHERE card_id = $1;
+
+-- name: RevealCityField :exec
+UPDATE cards SET city_visible = true WHERE card_id = $1;
+
+-- name: RevealCountryField :exec
+UPDATE cards SET country_visible = true WHERE card_id = $1;
+
+-- name: RevealPhotosField :exec
+UPDATE cards SET photos_visible = true WHERE card_id = $1;
+
+-- name: RevealBioField :exec
+UPDATE cards SET bio_visible = true WHERE card_id = $1;
+
+-- name: RevealHobbiesField :exec
+UPDATE cards SET hobbies_visible = true WHERE card_id = $1;
+
+-- name: RevealLanguagesField :exec
+UPDATE cards SET languages_visible = true WHERE card_id = $1;
+
+-- name: RevealNameField :exec
+UPDATE cards SET display_name_visible = true WHERE card_id = $1;
+
+-- name: RevealBirthField :exec
+UPDATE cards SET date_of_birth_visible = true WHERE card_id = $1;
 
 -- name: GetUserPhotos :many
 SELECT * FROM user_photos WHERE user_id = $1 ORDER BY position;
@@ -55,19 +79,22 @@ SELECT
     c.notes_on_subject,
     c.display_name_visible,
     c.date_of_birth_visible,
-    c.ciudad_visible,
-    c.pais_visible,
-    c.foto_visible,
+    c.city_visible,
+    c.country_visible,
+    c.photos_visible,
     c.bio_visible,
-    c.intereses_visible,
-    c.idiomas_visible,
+    c.hobbies_visible,
+    c.languages_visible,
     u.display_name,
     u.date_of_birth,
-    u.ciudad,
-    u.pais,
+    u.city,
+    u.country,
     u.bio,
-    u.intereses,
-    u.idiomas
+    u.hobbies,
+    u.languages
 FROM cards c
 JOIN users u ON u.user_id = c.subject_id
 WHERE c.card_id = $1;
+
+-- name: GetCardWithChatCreatorAndSubject :one
+SELECT * FROM cards WHERE chat_id = $1 AND creator_id = $2 AND subject_id = $3;

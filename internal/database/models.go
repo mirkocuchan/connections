@@ -20,12 +20,12 @@ type Card struct {
 	NotesOnSubject     sql.NullString
 	DisplayNameVisible sql.NullBool
 	DateOfBirthVisible sql.NullBool
-	CiudadVisible      sql.NullBool
-	PaisVisible        sql.NullBool
-	FotoVisible        sql.NullBool
+	CityVisible        sql.NullBool
+	CountryVisible     sql.NullBool
+	PhotosVisible      sql.NullBool
 	BioVisible         sql.NullBool
-	InteresesVisible   sql.NullBool
-	IdiomasVisible     sql.NullBool
+	HobbiesVisible     sql.NullBool
+	LanguagesVisible   sql.NullBool
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
 }
@@ -66,10 +66,10 @@ type User struct {
 	UpdatedAt    time.Time
 	DisplayName  sql.NullString
 	Bio          sql.NullString
-	Ciudad       sql.NullString
-	Pais         sql.NullString
-	Intereses    sql.NullString
-	Idiomas      sql.NullString
+	City         sql.NullString
+	Country      sql.NullString
+	Hobbies      sql.NullString
+	Languages    sql.NullString
 }
 
 type UserPhoto struct {

@@ -22,13 +22,17 @@ CREATE TABLE cards(
     date_of_birth_visible BOOLEAN DEFAULT false,
     city_visible BOOLEAN DEFAULT false,
     country_visible BOOLEAN DEFAULT false,
-    photo_visible BOOLEAN DEFAULT false,
+    photos_visible BOOLEAN DEFAULT false,
     bio_visible BOOLEAN DEFAULT false,
     hobbies_visible BOOLEAN DEFAULT false,
     languages_visible BOOLEAN DEFAULT false,
     created_at TIMESTAMP NOT NULL DEFAULT now(),
     updated_at TIMESTAMP NOT NULL DEFAULT now()
 );
+-- Índice único para prevenir duplicados
+CREATE UNIQUE INDEX idx_unique_card_relationship 
+ON cards(chat_id, creator_id, subject_id);
+
 ALTER TABLE users 
     ADD COLUMN display_name TEXT,
     ADD COLUMN bio TEXT,
@@ -51,6 +55,7 @@ CREATE TABLE user_photos(
 
 -- +goose Down
 DROP TABLE cards;
+DROP INDEX idx_unique_card_relationship;
 DROP TABLE user_photos;
 ALTER TABLE users 
     DROP COLUMN display_name,
