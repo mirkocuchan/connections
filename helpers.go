@@ -45,3 +45,15 @@ func (s *state) getUserIDFromContext(r *http.Request) (uuid.UUID, error) {
 
 	return userID, nil
 }
+
+//funcion que convierte un *string en un sql.Nullstring así puede ser tomado
+func nullString(s *string) sql.NullString {
+    if s == nil {
+        return sql.NullString{}
+    }
+
+    return sql.NullString{
+        String: *s,
+        Valid:  true,
+    }
+}

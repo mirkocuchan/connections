@@ -7,6 +7,7 @@ package database
 
 import (
 	"context"
+	"database/sql"
 	"time"
 
 	"github.com/google/uuid"
@@ -87,6 +88,58 @@ SELECT user_id, username, email, password_hash, date_of_birth, created_at, updat
 
 func (q *Queries) GetUserByID(ctx context.Context, userID uuid.UUID) (User, error) {
 	row := q.db.QueryRowContext(ctx, getUserByID, userID)
+	var i User
+	err := row.Scan(
+		&i.UserID,
+		&i.Username,
+		&i.Email,
+		&i.PasswordHash,
+		&i.DateOfBirth,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DisplayName,
+		&i.Bio,
+		&i.City,
+		&i.Country,
+		&i.Hobbies,
+		&i.Languages,
+	)
+	return i, err
+}
+
+const updateUser = `-- name: UpdateUser :one
+UPDATE users SET
+    display_name = COALESCE($1, display_name),
+    bio          = COALESCE($2, bio),
+    city         = COALESCE($3, city),
+    country      = COALESCE($4, country),
+    hobbies      = COALESCE($5, hobbies),
+    languages    = COALESCE($6, languages),
+    updated_at   = NOW()
+WHERE user_id = $7
+RETURNING user_id, username, email, password_hash, date_of_birth, created_at, updated_at, display_name, bio, city, country, hobbies, languages
+`
+
+type UpdateUserParams struct {
+	DisplayName sql.NullString
+	Bio         sql.NullString
+	City        sql.NullString
+	Country     sql.NullString
+	Hobbies     sql.NullString
+	Languages   sql.NullString
+	UserID      uuid.UUID
+}
+
+func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error) {
+	row := q.db.QueryRowContext(ctx, updateUser,
+		arg.DisplayName,
+		arg.Bio,
+		arg.City,
+		arg.Country,
+		arg.Hobbies,
+		arg.Languages,
+		arg.UserID,
+	)
 	var i User
 	err := row.Scan(
 		&i.UserID,

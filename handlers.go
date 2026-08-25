@@ -479,6 +479,81 @@ func (s *state) deleteChat(w http.ResponseWriter, r *http.Request){
 	RespondWithJSON(w, 200, map[string]string{"message": "chat deleted", "chat_id": chat.ChatID.String()})
 }
 
+type updateFields struct {
+	DisplayName *string `json:"display_name"`
+	Bio         *string `json:"bio"`
+	City        *string `json:"city"`
+	Country     *string `json:"country"`
+	Hobbies     *string `json:"hobbies"`
+	Languages   *string `json:"languages"`
+}
+
+func (s *state) editFields(w http.ResponseWriter, r *http.Request){
+	defer r.Body.Close()
+
+	userData, err := io.ReadAll(r.Body)
+	if err != nil{
+		RespondWithError(w, 400, "couldn't read the request body")
+		return
+	}
+	
+	var body updateFields
+	if err := json.Unmarshal(userData, &body); err != nil {
+        RespondWithError(w, 400, "error unmarshalling JSON")
+		return
+    }
+	//getting the content of the update that is being done
+
+	//the one that is going to edit the fields
+	userID, err := s.getUserIDFromContext(r)
+	if err != nil{
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
+	updateUserParams := database.UpdateUserParams{
+		DisplayName: nullString(body.DisplayName),
+		Bio:         nullString(body.Bio),
+		City:        nullString(body.City),
+		Country:     nullString(body.Country),
+		Hobbies:     nullString(body.Hobbies),
+		Languages:   nullString(body.Languages),
+		UserID:      userID,
+	}
+	updatedUser, err := s.db.UpdateUser(r.Context(), updateUserParams)
+	if err != nil{
+		RespondWithError(w, 500, "Internal Server Error")
+		return
+	}
+	type responseUser struct {
+		ID uuid.UUID `json:"id"`
+		Username string `json:"username"`
+		Email string `json:"email"`
+		DateOfBirth Date `json:"date_of_birth"`
+		CreatedAt time.Time `json:"created_at"`
+		UpdatedAt time.Time `json:"updated_at"`
+		DisplayName string `json:"display_name"`
+		Bio string `json:"bio"`
+		City string `json:"city"`
+		Country string `json:"country"`
+		Hobbies string `json:"hobbies"`
+		Languages string `json:"languages"`
+	}
+	RespondWithJSON(w, 200, responseUser{
+    ID:          updatedUser.UserID,
+    Username:    updatedUser.Username,
+    Email:       updatedUser.Email,
+    DateOfBirth: updatedUser.DateOfBirth,
+    CreatedAt:   updatedUser.CreatedAt,
+    UpdatedAt:   updatedUser.UpdatedAt,
+    DisplayName: updatedUser.DisplayName.String,
+    Bio:         updatedUser.Bio.String,
+    City:        updatedUser.City.String,
+    Country:     updatedUser.Country.String,
+    Hobbies:     updatedUser.Hobbies.String,
+    Languages:   updatedUser.Languages.String,
+	})
+}
+
 //el state es el receiver, (el objeto que está ejecutando el método)
 //cuando handlers() escribe s.register, ese s es el mismo que le llegó a handlers(),  necesita recibir la instancia de alguna manera 
 func (s *state) handlers() {
@@ -493,6 +568,7 @@ func (s *state) handlers() {
 	http.Handle("GET /chats/{chatID}/messages", s.authMiddleware(http.HandlerFunc(s.getMessages)))
 	http.Handle("DELETE /chats/{chatID}", s.authMiddleware(http.HandlerFunc(s.deleteChat)))
 	
+	http.Handle("PATCH /me", s.authMiddleware(http.HandlerFunc(s.updateFields)))
 	http.Handle("GET /me", s.authMiddleware(http.HandlerFunc(s.getMe)))
 	//s.getMe es un handler, pero no cumple la interfaz http.Handler. entonces lo envolvemos en http.HandlerFunc para que cumpla la interfaz.
 	//s.authMiddleware es un middleware que toma un handler y devuelve un handler. entonces le pasamos el handler envuelto en http.HandlerFunc, y nos devuelve otro handler que valida el JWT antes de ejecutar s.getMe.
