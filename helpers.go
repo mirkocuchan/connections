@@ -7,6 +7,7 @@ import(
     "errors"
     "strings"
     "database/sql"
+    "fmt"
 )
 //net/http exige que un handler tenga la firma (ResponseWriter, *Request). lo hacemos a register un método de state para tener acceso a db y cfg desde adentro sin recibirlos como parámetro,
 //porque no permite tener state de parametro al ser un handler
@@ -31,6 +32,19 @@ func (d *Date) UnmarshalJSON(data []byte) error{
     *d = Date(modifiedTime)
     return nil
 }
+
+func (d Date) MarshalJSON() ([]byte, error){
+    
+    convertedD := time.Time(d)
+    //no hereda los métodos del tipo original, time, entonces tenemos que convertirlo para poder formatearlo y hacerlo string
+
+    dateInAString := convertedD.Format("2006-01-02")
+    completedStringOfDate := fmt.Sprintf("\"%s\"", dateInAString) //lo envuelvo en comillas
+    
+    return []byte(completedStringOfDate), nil //respeto la interfaz de json.Marshal y devuelvo un []byte, lo convierto a byte
+
+}
+
 //función que recibe un request y devuelve el userID del contexto de la request. si no hay userID, devuelve uuid.Nil y un error
 func (s *state) getUserIDFromContext(r *http.Request) (uuid.UUID, error) {
 	userIDValue := r.Context().Value(userIDKey)

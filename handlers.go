@@ -10,7 +10,6 @@ import(
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"database/sql"
-	"fmt"
 )
 
 type receivedUser struct {
@@ -55,13 +54,10 @@ func (s *state) register(w http.ResponseWriter, r *http.Request){
 	//expone esa estructura (es decir, hacer que sus campos sean públicos, con mayúscula), te permite hacer un type assertion (conversión de tipo) en Go para acceder directamente a esos campos
 
 	if err != nil{
-		fmt.Printf("CREATE USER ERROR: %T: %v\n", err, err)
 		//quiero comprobar si detrás de esta interfaz de error, hay un pq.Error. si lo hay quiero acceso a él con todos sus campos propios.
 		//variable, ok := interfaz.(TipoConcreto). ok es bool: true si err era *pq.Error por dentro, false si no. pqErr es la variable nueva, de tipo *pq.Error
 		//si ok = true, podemos acceder a pqErr.Code porque ahora Go sabe con certeza qué tipo es. ok = false, pqErr va a ser nil (no te sirve, no rompe nada)
 		if pqErr, ok := err.(*pq.Error); ok {
-			fmt.Println("Postgres code:", pqErr.Code)
-        	fmt.Println("Postgres message:", pqErr.Message)
 			//pqErr es de tipo concreto pq.Err ya
 			if pqErr.Code == "23505"{
 				RespondWithError(w, 409, "there is another user with this username")
@@ -256,6 +252,12 @@ func (s *state) getMe(w http.ResponseWriter, r *http.Request){
 		DateOfBirth Date `json:"date_of_birth"`
 		CreatedAt time.Time `json:"created_at"`
 		UpdatedAt time.Time `json:"updated_at"`
+		DisplayName string    `json:"display_name"`
+		Bio         string    `json:"bio"`
+		City        string    `json:"city"`
+		Country     string    `json:"country"`
+		Hobbies     string    `json:"hobbies"`
+		Languages   string    `json:"languages"`
 	}
 	
 	RespondWithJSON(w, 200, responseUser{
@@ -265,6 +267,12 @@ func (s *state) getMe(w http.ResponseWriter, r *http.Request){
 		DateOfBirth: Date(user.DateOfBirth),
 		CreatedAt: user.CreatedAt,
 		UpdatedAt: user.UpdatedAt,
+		DisplayName: user.DisplayName.String,
+		Bio:         user.Bio.String,
+		City:        user.City.String,
+		Country:     user.Country.String,
+		Hobbies:     user.Hobbies.String,
+		Languages:   user.Languages.String,
 	})
 }
 
@@ -558,6 +566,93 @@ func (s *state) updateFields(w http.ResponseWriter, r *http.Request){
 	})
 }
 
+func (s *state) getUserCard(w http.ResponseWriter, r *http.Request){
+	//the one that is requesting the card
+	userID, err := s.getUserIDFromContext(r)
+	if err != nil{
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
+
+	chatIDString := r.PathValue("chatID")
+	chatID, err := uuid.Parse(chatIDString)
+	if err != nil {
+    	RespondWithError(w, 404, "Invalid chat ID")
+    	return
+	}
+	
+	chat, err := s.db.GetChatByID(r.Context(), chatID)
+	if err != nil{
+		RespondWithError(w, 404, "chat doesn't exist in the database")
+    	return
+	}
+
+	var subjectID uuid.UUID
+	if chat.UserOneID == userID {
+		subjectID = chat.UserTwoID
+	} else {
+		subjectID = chat.UserOneID
+	}
+
+	if chat.UserOneID != userID && chat.UserTwoID != userID{
+		RespondWithError(w, 403, "you are not a participant of this chat, you can't delete it")
+		return
+	}//me fijo si pertenece a alguno de los dos usuarios del chat. si no, devuelvo 403 forbidden.
+	
+	//cardParams
+	cardParams := database.GetCardWithChatCreatorAndSubjectParams{
+		ChatID: chatID,
+		CreatorID: userID,
+		SubjectID: subjectID,
+	}
+	
+	card, err := s.db.GetCardWithChatCreatorAndSubject(r.Context(), cardParams)
+	if err == sql.ErrNoRows{
+		//si no hay card, la creo. si hay card, devuelvo la card existente.
+		newCardParams := database.CreateCardParams{
+			ChatID: chatID,
+			CreatorID: userID,
+			SubjectID: subjectID,
+		}
+
+		newCard, err := s.db.CreateUserCard(r.Context(), newCardParams)
+		if err != nil{
+			RespondWithError(w, 500, "couldn't create the card in the database")
+			return
+		}
+			
+		RespondWithJSON(w, 200, map[string]string{"message": "card created successfully", "card_id": newCard.CardID.String()})
+		return
+	}
+	
+	if err != nil{
+		RespondWithError(w, 500, "couldn't find the card in the database")
+		return
+	}
+	type responseCard struct {
+		CardID             uuid.UUID `json:"card_id"`
+		ChatID             uuid.UUID `json:"chat_id"`
+		CreatorID          uuid.UUID `json:"creator_id"`
+		SubjectID          uuid.UUID `json:"subject_id"`
+		Nickname           sql.NullString `json:"nickname"`
+		NotesOnSubject     sql.NullString `json:"notes_on_subject"`
+		DisplayNameVisible sql.NullBool `json:"display_name"`
+		DateOfBirthVisible sql.NullBool `json:"date_of_birth"`
+		CityVisible        sql.NullBool `json:"city"`
+		CountryVisible     sql.NullBool `json:"country"`
+		PhotosVisible      sql.NullBool `json:"photos"`
+		BioVisible         sql.NullBool `json:"bio"`
+		HobbiesVisible     sql.NullBool `json:"hobbies"`
+		LanguagesVisible   sql.NullBool `json:"languages"`
+		CreatedAt          time.Time `json:"created_at"`
+		UpdatedAt          time.Time `json:"updated_at"`
+	}
+	RespondWithJSON(w, 200, responseCard{CardID: card.CardID, ChatID: card.ChatID, CreatorID: card.CreatorID,         
+		SubjectID: card.SubjectID, Nickname: card.Nickname, NotesOnSubject: card.NotesOnSubject, DisplayNameVisible: card.DisplayNameVisible, DateOfBirthVisible: card.DateOfBirthVisible,
+		CityVisible: card.CityVisible, CountryVisible: card.CountryVisible, PhotosVisible: card.PhotosVisible, BioVisible: card.BioVisible, HobbiesVisible: card.HobbiesVisible,
+		LanguagesVisible: card.LanguagesVisible, CreatedAt: card.CreatedAt, UpdatedAt: card.UpdatedAt})
+}
+
 //el state es el receiver, (el objeto que está ejecutando el método)
 //cuando handlers() escribe s.register, ese s es el mismo que le llegó a handlers(),  necesita recibir la instancia de alguna manera 
 func (s *state) handlers() {
@@ -573,6 +668,8 @@ func (s *state) handlers() {
 	http.Handle("DELETE /chats/{chatID}", s.authMiddleware(http.HandlerFunc(s.deleteChat)))
 	
 	http.Handle("PATCH /me", s.authMiddleware(http.HandlerFunc(s.updateFields)))
+	http.Handle("GET /chats/{chatID}/card", s.authMiddleware(http.HandlerFunc(s.getUserCard)))
+
 	http.Handle("GET /me", s.authMiddleware(http.HandlerFunc(s.getMe)))
 	//s.getMe es un handler, pero no cumple la interfaz http.Handler. entonces lo envolvemos en http.HandlerFunc para que cumpla la interfaz.
 	//s.authMiddleware es un middleware que toma un handler y devuelve un handler. entonces le pasamos el handler envuelto en http.HandlerFunc, y nos devuelve otro handler que valida el JWT antes de ejecutar s.getMe.
