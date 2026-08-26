@@ -10,6 +10,7 @@ import(
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"database/sql"
+	"fmt"
 )
 
 type receivedUser struct {
@@ -54,10 +55,13 @@ func (s *state) register(w http.ResponseWriter, r *http.Request){
 	//expone esa estructura (es decir, hacer que sus campos sean públicos, con mayúscula), te permite hacer un type assertion (conversión de tipo) en Go para acceder directamente a esos campos
 
 	if err != nil{
+		fmt.Printf("CREATE USER ERROR: %T: %v\n", err, err)
 		//quiero comprobar si detrás de esta interfaz de error, hay un pq.Error. si lo hay quiero acceso a él con todos sus campos propios.
 		//variable, ok := interfaz.(TipoConcreto). ok es bool: true si err era *pq.Error por dentro, false si no. pqErr es la variable nueva, de tipo *pq.Error
 		//si ok = true, podemos acceder a pqErr.Code porque ahora Go sabe con certeza qué tipo es. ok = false, pqErr va a ser nil (no te sirve, no rompe nada)
 		if pqErr, ok := err.(*pq.Error); ok {
+			fmt.Println("Postgres code:", pqErr.Code)
+        	fmt.Println("Postgres message:", pqErr.Message)
 			//pqErr es de tipo concreto pq.Err ya
 			if pqErr.Code == "23505"{
 				RespondWithError(w, 409, "there is another user with this username")
@@ -479,7 +483,7 @@ func (s *state) deleteChat(w http.ResponseWriter, r *http.Request){
 	RespondWithJSON(w, 200, map[string]string{"message": "chat deleted", "chat_id": chat.ChatID.String()})
 }
 
-type updateFields struct {
+type updateFieldsStruct struct {
 	DisplayName *string `json:"display_name"`
 	Bio         *string `json:"bio"`
 	City        *string `json:"city"`
@@ -488,7 +492,7 @@ type updateFields struct {
 	Languages   *string `json:"languages"`
 }
 
-func (s *state) editFields(w http.ResponseWriter, r *http.Request){
+func (s *state) updateFields(w http.ResponseWriter, r *http.Request){
 	defer r.Body.Close()
 
 	userData, err := io.ReadAll(r.Body)
@@ -497,7 +501,7 @@ func (s *state) editFields(w http.ResponseWriter, r *http.Request){
 		return
 	}
 	
-	var body updateFields
+	var body updateFieldsStruct
 	if err := json.Unmarshal(userData, &body); err != nil {
         RespondWithError(w, 400, "error unmarshalling JSON")
 		return
@@ -542,7 +546,7 @@ func (s *state) editFields(w http.ResponseWriter, r *http.Request){
     ID:          updatedUser.UserID,
     Username:    updatedUser.Username,
     Email:       updatedUser.Email,
-    DateOfBirth: updatedUser.DateOfBirth,
+    DateOfBirth: Date(updatedUser.DateOfBirth),
     CreatedAt:   updatedUser.CreatedAt,
     UpdatedAt:   updatedUser.UpdatedAt,
     DisplayName: updatedUser.DisplayName.String,

@@ -54,8 +54,8 @@ CREATE TABLE user_photos(
 );
 
 -- +goose Down
-DROP TABLE cards;
 DROP INDEX idx_unique_card_relationship;
+DROP TABLE cards;
 DROP TABLE user_photos;
 ALTER TABLE users 
     DROP COLUMN display_name,
