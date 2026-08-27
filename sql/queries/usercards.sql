@@ -30,8 +30,13 @@ UPDATE cards SET nickname = NULL,
     updated_at = Now()
 WHERE card_id = $1;
 
--- name: UpdateNickname :exec
-UPDATE cards SET nickname = $1, updated_at = Now()  WHERE card_id = $2;
+-- name: UpdateNickname :one
+UPDATE cards SET nickname = $1, updated_at = Now() WHERE card_id = $2
+RETURNING *;
+
+-- name: UpdateNotesOnSubject :one
+UPDATE cards SET notes_on_subject = $1, updated_at = Now() WHERE card_id = $2
+RETURNING *;
 
 -- name: RevealFields :exec
 UPDATE cards SET display_name_visible = true, date_of_birth_visible = true, city_visible = true,

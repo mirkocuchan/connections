@@ -653,6 +653,200 @@ func (s *state) getUserCard(w http.ResponseWriter, r *http.Request){
 		LanguagesVisible: card.LanguagesVisible, CreatedAt: card.CreatedAt, UpdatedAt: card.UpdatedAt})
 }
 
+type createNickname struct {
+    Nickname string `json:"nickname"`
+}
+
+func (s *state) updateNickname(w http.ResponseWriter, r *http.Request){
+	defer r.Body.Close()
+
+	messageData, err := io.ReadAll(r.Body)
+	if err != nil{
+		RespondWithError(w, 400, "couldn't read the request body")
+		return
+	}
+	
+	var body createNickname
+	if err := json.Unmarshal(messageData, &body); err != nil {
+        RespondWithError(w, 400, "error unmarshalling JSON")
+		return
+    }
+	//getting the content of the nickname that is being updated
+
+	//the one that is requesting the card
+	userID, err := s.getUserIDFromContext(r)
+	if err != nil{
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
+
+	chatIDString := r.PathValue("chatID")
+	chatID, err := uuid.Parse(chatIDString)
+	if err != nil {
+    	RespondWithError(w, 404, "Invalid chat ID")
+    	return
+	}
+	
+	chat, err := s.db.GetChatByID(r.Context(), chatID)
+	if err != nil{
+		RespondWithError(w, 404, "chat doesn't exist in the database")
+    	return
+	}
+
+	var subjectID uuid.UUID
+	if chat.UserOneID == userID {
+		subjectID = chat.UserTwoID
+	} else {
+		subjectID = chat.UserOneID
+	}
+
+	if chat.UserOneID != userID && chat.UserTwoID != userID{
+		RespondWithError(w, 403, "you are not a participant of this chat, you can't delete it")
+		return
+	}//me fijo si pertenece a alguno de los dos usuarios del chat. si no, devuelvo 403 forbidden.
+
+	//cardParams
+	cardParams := database.GetCardWithChatCreatorAndSubjectParams{
+		ChatID: chatID,
+		CreatorID: userID,
+		SubjectID: subjectID,
+	}
+	
+	card, err := s.db.GetCardWithChatCreatorAndSubject(r.Context(), cardParams)
+	if err == sql.ErrNoRows{
+		RespondWithError(w, 500, "card does not exist or couldn't get it")
+		return
+	}
+	updateNicknameParams := database.UpdateNicknameParams{
+		Nickname: body.Nickname,
+		CardID: card.CardID,
+	}
+	updatedCard, err = s.db.UpdateNickname(r.Context(), updateNicknameParams)
+	if err != nil{
+		RespondWithError(w, 500, "couldn't update the nickname")
+		return
+	}
+	type responseCard struct {
+		CardID             uuid.UUID `json:"card_id"`
+		ChatID             uuid.UUID `json:"chat_id"`
+		CreatorID          uuid.UUID `json:"creator_id"`
+		SubjectID          uuid.UUID `json:"subject_id"`
+		Nickname           sql.NullString `json:"nickname"`
+		NotesOnSubject     sql.NullString `json:"notes_on_subject"`
+		DisplayNameVisible sql.NullBool `json:"display_name"`
+		DateOfBirthVisible sql.NullBool `json:"date_of_birth"`
+		CityVisible        sql.NullBool `json:"city"`
+		CountryVisible     sql.NullBool `json:"country"`
+		PhotosVisible      sql.NullBool `json:"photos"`
+		BioVisible         sql.NullBool `json:"bio"`
+		HobbiesVisible     sql.NullBool `json:"hobbies"`
+		LanguagesVisible   sql.NullBool `json:"languages"`
+		CreatedAt          time.Time `json:"created_at"`
+		UpdatedAt          time.Time `json:"updated_at"`
+	}
+	RespondWithJSON(w, 200, responseCard{CardID: updatedCard.CardID, ChatID: updatedCard.ChatID, CreatorID: updatedCard.CreatorID,         
+		SubjectID: updatedCard.SubjectID, Nickname: updatedCard.Nickname, NotesOnSubject: updatedCard.NotesOnSubject, DisplayNameVisible: updatedCard.DisplayNameVisible, DateOfBirthVisible: updatedCard.DateOfBirthVisible,
+		CityVisible: updatedCard.CityVisible, CountryVisible: updatedCard.CountryVisible, PhotosVisible: updatedCard.PhotosVisible, BioVisible: updatedCard.BioVisible, HobbiesVisible: updatedCard.HobbiesVisible,
+		LanguagesVisible: updatedCard.LanguagesVisible, CreatedAt: updatedCard.CreatedAt, UpdatedAt: updatedCard.UpdatedAt})
+}
+
+type createNotes struct {
+    Notes string `json:"notes_on_subject"`
+}
+
+func (s *state) updateNotesOnSubject(w http.ResponseWriter, r *http.Request){
+	defer r.Body.Close()
+
+	messageData, err := io.ReadAll(r.Body)
+	if err != nil{
+		RespondWithError(w, 400, "couldn't read the request body")
+		return
+	}
+	
+	var body createNotes
+	if err := json.Unmarshal(messageData, &body); err != nil {
+        RespondWithError(w, 400, "error unmarshalling JSON")
+		return
+    }
+	//getting the content of the notes that is being updated
+
+	//the one that is requesting the card
+	userID, err := s.getUserIDFromContext(r)
+	if err != nil{
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
+
+	chatIDString := r.PathValue("chatID")
+	chatID, err := uuid.Parse(chatIDString)
+	if err != nil {
+    	RespondWithError(w, 404, "Invalid chat ID")
+    	return
+	}
+	
+	chat, err := s.db.GetChatByID(r.Context(), chatID)
+	if err != nil{
+		RespondWithError(w, 404, "chat doesn't exist in the database")
+    	return
+	}
+
+	var subjectID uuid.UUID
+	if chat.UserOneID == userID {
+		subjectID = chat.UserTwoID
+	} else {
+		subjectID = chat.UserOneID
+	}
+
+	if chat.UserOneID != userID && chat.UserTwoID != userID{
+		RespondWithError(w, 403, "you are not a participant of this chat, you can't delete it")
+		return
+	}//me fijo si pertenece a alguno de los dos usuarios del chat. si no, devuelvo 403 forbidden.
+
+	//cardParams
+	cardParams := database.GetCardWithChatCreatorAndSubjectParams{
+		ChatID: chatID,
+		CreatorID: userID,
+		SubjectID: subjectID,
+	}
+	
+	card, err := s.db.GetCardWithChatCreatorAndSubject(r.Context(), cardParams)
+	if err == sql.ErrNoRows{
+		RespondWithError(w, 500, "card does not exist or couldn't get it")
+		return
+	}
+	updateNotesOnSubjectParams := database.UpdateNotesOnSubjectParams{
+		NotesOnSubject: body.Notes,
+		CardID: card.CardID,
+	}
+	updatedCard, err := s.db.UpdateNotesOnSubject(r.Context(), updateNotesOnSubjectParams)
+	if err != nil{
+		RespondWithError(w, 500, "couldn't update the notes")
+		return
+	}
+	type responseCard struct {
+		CardID             uuid.UUID `json:"card_id"`
+		ChatID             uuid.UUID `json:"chat_id"`
+		CreatorID          uuid.UUID `json:"creator_id"`
+		SubjectID          uuid.UUID `json:"subject_id"`
+		Nickname           sql.NullString `json:"nickname"`
+		NotesOnSubject     sql.NullString `json:"notes_on_subject"`
+		DisplayNameVisible sql.NullBool `json:"display_name"`
+		DateOfBirthVisible sql.NullBool `json:"date_of_birth"`
+		CityVisible        sql.NullBool `json:"city"`
+		CountryVisible     sql.NullBool `json:"country"`
+		PhotosVisible      sql.NullBool `json:"photos"`
+		BioVisible         sql.NullBool `json:"bio"`
+		HobbiesVisible     sql.NullBool `json:"hobbies"`
+		LanguagesVisible   sql.NullBool `json:"languages"`
+		CreatedAt          time.Time `json:"created_at"`
+		UpdatedAt          time.Time `json:"updated_at"`
+	}
+	RespondWithJSON(w, 200, responseCard{CardID: updatedCard.CardID, ChatID: updatedCard.ChatID, CreatorID: updatedCard.CreatorID,         
+		SubjectID: updatedCard.SubjectID, Nickname: updatedCard.Nickname, NotesOnSubject: updatedCard.NotesOnSubject, DisplayNameVisible: updatedCard.DisplayNameVisible, DateOfBirthVisible: updatedCard.DateOfBirthVisible,
+		CityVisible: updatedCard.CityVisible, CountryVisible: updatedCard.CountryVisible, PhotosVisible: updatedCard.PhotosVisible, BioVisible: updatedCard.BioVisible, HobbiesVisible: updatedCard.HobbiesVisible,
+		LanguagesVisible: updatedCard.LanguagesVisible, CreatedAt: updatedCard.CreatedAt, UpdatedAt: updatedCard.UpdatedAt})
+}
+
 //el state es el receiver, (el objeto que está ejecutando el método)
 //cuando handlers() escribe s.register, ese s es el mismo que le llegó a handlers(),  necesita recibir la instancia de alguna manera 
 func (s *state) handlers() {
@@ -669,7 +863,8 @@ func (s *state) handlers() {
 	
 	http.Handle("PATCH /me", s.authMiddleware(http.HandlerFunc(s.updateFields)))
 	http.Handle("GET /chats/{chatID}/card", s.authMiddleware(http.HandlerFunc(s.getUserCard)))
-
+	http.Handle("PATCH /chats/{chatID}/card/nickname", s.authMiddleware(http.HandlerFunc(s.updateNickname)))
+	http.Handle("PATCH /chats/{chatID}/card/notes", s.authMiddleware(http.HandlerFunc(s.updateNotesOnSubject)))
 	http.Handle("GET /me", s.authMiddleware(http.HandlerFunc(s.getMe)))
 	//s.getMe es un handler, pero no cumple la interfaz http.Handler. entonces lo envolvemos en http.HandlerFunc para que cumpla la interfaz.
 	//s.authMiddleware es un middleware que toma un handler y devuelve un handler. entonces le pasamos el handler envuelto en http.HandlerFunc, y nos devuelve otro handler que valida el JWT antes de ejecutar s.getMe.
