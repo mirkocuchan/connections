@@ -678,14 +678,14 @@ type createNickname struct {
 func (s *state) updateNickname(w http.ResponseWriter, r *http.Request){
 	defer r.Body.Close()
 
-	messageData, err := io.ReadAll(r.Body)
+	nicknameData, err := io.ReadAll(r.Body)
 	if err != nil{
 		RespondWithError(w, 400, "couldn't read the request body")
 		return
 	}
 	
 	var body createNickname
-	if err := json.Unmarshal(messageData, &body); err != nil {
+	if err := json.Unmarshal(nicknameData, &body); err != nil {
         RespondWithError(w, 400, "error unmarshalling JSON")
 		return
     }
@@ -865,7 +865,186 @@ func (s *state) updateNotesOnSubject(w http.ResponseWriter, r *http.Request){
 		LanguagesVisible: updatedCard.LanguagesVisible, CreatedAt: updatedCard.CreatedAt, UpdatedAt: updatedCard.UpdatedAt})
 }
 
+func (s *state) revealAField(w http.ResponseWriter, r *http.Request){
+	//the one that is revealing the field
+	userID, err := s.getUserIDFromContext(r)
+	if err != nil{
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
 
+	fieldToReveal := r.PathValue("field")
+	chatIDString := r.PathValue("chatID")
+	chatID, err := uuid.Parse(chatIDString)
+	if err != nil {
+    	RespondWithError(w, 404, "Invalid chat ID")
+    	return
+	}
+	
+	chat, err := s.db.GetChatByID(r.Context(), chatID)
+	if err != nil{
+		RespondWithError(w, 404, "chat doesn't exist in the database")
+    	return
+	}
+
+	var subjectID uuid.UUID
+	if chat.UserOneID == userID {
+		subjectID = chat.UserTwoID
+	} else {
+		subjectID = chat.UserOneID
+	}
+
+	if chat.UserOneID != userID && chat.UserTwoID != userID{
+		RespondWithError(w, 403, "you are not a participant of this chat, you can't delete it")
+		return
+	}//me fijo si pertenece a alguno de los dos usuarios del chat. si no, devuelvo 403 forbidden.
+
+	//cardParams
+	cardParams := database.GetCardWithChatCreatorAndSubjectParams{
+		ChatID: chatID,
+		CreatorID: subjectID,
+		SubjectID: userID,
+	}
+	
+	card, err := s.db.GetCardWithChatCreatorAndSubject(r.Context(), cardParams)
+	if err == sql.ErrNoRows {
+		newCardParams := database.CreateCardParams{
+			ChatID:    chatID,
+			CreatorID: subjectID,
+			SubjectID: userID,
+		}
+
+		card, err = s.db.CreateUserCard(r.Context(), newCardParams)
+		if err != nil {
+			RespondWithError(w, 500, "couldn't create the card in the database")
+			return
+		}
+	} else if err != nil {
+		RespondWithError(w, 500, "couldn't find the card in the database")
+		return
+	}
+	switch fieldToReveal {
+		case "city":
+			err = s.db.RevealCityField(r.Context(), card.CardID) 
+			if err != nil{
+				RespondWithError(w, 500, "couldn't reveal that field")
+				return
+			}
+		case "country":
+			err = s.db.RevealCountryField(r.Context(), card.CardID)
+			if err != nil{
+				RespondWithError(w, 500, "couldn't reveal that field")
+				return
+			}
+		case "bio":
+			err = s.db.RevealBioField(r.Context(), card.CardID)
+			if err != nil{
+				RespondWithError(w, 500, "couldn't reveal that field")
+				return
+			}
+		case "date_of_birth":
+			err = s.db.RevealBirthField(r.Context(), card.CardID)
+			if err != nil{
+				RespondWithError(w, 500, "couldn't reveal that field")
+				return
+			}
+		case "name":
+			err = s.db.RevealNameField(r.Context(), card.CardID)
+			if err != nil{
+				RespondWithError(w, 500, "couldn't reveal that field")
+				return
+			}
+		case "hobbies":
+			err = s.db.RevealHobbiesField(r.Context(), card.CardID)
+			if err != nil{
+				RespondWithError(w, 500, "couldn't reveal that field")
+				return
+			}
+		case "languages":
+			err = s.db.RevealLanguagesField(r.Context(), card.CardID)
+			if err != nil{
+				RespondWithError(w, 500, "couldn't reveal that field")
+				return
+			}
+		case "photos":
+			err = s.db.RevealPhotosField(r.Context(), card.CardID)
+			if err != nil{
+				RespondWithError(w, 500, "couldn't reveal that field")
+				return
+			}
+		default:
+			RespondWithError(w, 400, "invalid field")
+			return
+	}
+	RespondWithJSON(w, 200, map[string]string{"message": "field revealed", "card_id": card.CardID.String()})
+}
+
+func (s *state) revealAllFields(w http.ResponseWriter, r *http.Request){
+	//the one that is revealing the fields
+	userID, err := s.getUserIDFromContext(r)
+	if err != nil{
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
+
+	fieldToReveal := r.PathValue("field")
+	chatIDString := r.PathValue("chatID")
+	chatID, err := uuid.Parse(chatIDString)
+	if err != nil {
+    	RespondWithError(w, 404, "Invalid chat ID")
+    	return
+	}
+	
+	chat, err := s.db.GetChatByID(r.Context(), chatID)
+	if err != nil{
+		RespondWithError(w, 404, "chat doesn't exist in the database")
+    	return
+	}
+
+	var subjectID uuid.UUID
+	if chat.UserOneID == userID {
+		subjectID = chat.UserTwoID
+	} else {
+		subjectID = chat.UserOneID
+	}
+
+	if chat.UserOneID != userID && chat.UserTwoID != userID{
+		RespondWithError(w, 403, "you are not a participant of this chat, you can't delete it")
+		return
+	}//me fijo si pertenece a alguno de los dos usuarios del chat. si no, devuelvo 403 forbidden.
+
+	//cardParams
+	cardParams := database.GetCardWithChatCreatorAndSubjectParams{
+		ChatID: chatID,
+		CreatorID: subjectID,
+		SubjectID: userID,
+	}
+	
+	card, err := s.db.GetCardWithChatCreatorAndSubject(r.Context(), cardParams)
+	if err == sql.ErrNoRows {
+		newCardParams := database.CreateCardParams{
+			ChatID:    chatID,
+			CreatorID: subjectID,
+			SubjectID: userID,
+		}
+
+		card, err = s.db.CreateUserCard(r.Context(), newCardParams)
+		if err != nil {
+			RespondWithError(w, 500, "couldn't create the card in the database")
+			return
+		}
+	} else if err != nil {
+		RespondWithError(w, 500, "couldn't find the card in the database")
+		return
+	}
+	err = s.db.RevealFields(r.Context(), card.CardID)
+	if err != nil{
+		RespondWithError(w, 500, "couldn't reveal the fields of this card")
+		return
+	}
+
+	RespondWithJSON(w, 200, map[string]string{"message": "fields revealed", "card_id": card.CardID.String()})
+}
 
 //el state es el receiver, (el objeto que está ejecutando el método)
 //cuando handlers() escribe s.register, ese s es el mismo que le llegó a handlers(),  necesita recibir la instancia de alguna manera 
@@ -886,7 +1065,9 @@ func (s *state) handlers() {
 
 	http.Handle("PATCH /chats/{chatID}/card/nickname", s.authMiddleware(http.HandlerFunc(s.updateNickname)))
 	http.Handle("PATCH /chats/{chatID}/card/notes", s.authMiddleware(http.HandlerFunc(s.updateNotesOnSubject)))
-	
+	http.Handle("POST /chats/{chatID}/card/reveal/{field}", s.authMiddleware(http.HandlerFunc(s.revealAField)))
+	http.Handle("POST /chats/{chatID}/card/reveal-all", s.authMiddleware(http.HandlerFunc(s.revealAllFields)))
+
 	http.Handle("GET /me", s.authMiddleware(http.HandlerFunc(s.getMe)))
 	//s.getMe es un handler, pero no cumple la interfaz http.Handler. entonces lo envolvemos en http.HandlerFunc para que cumpla la interfaz.
 	//s.authMiddleware es un middleware que toma un handler y devuelve un handler. entonces le pasamos el handler envuelto en http.HandlerFunc, y nos devuelve otro handler que valida el JWT antes de ejecutar s.getMe.
