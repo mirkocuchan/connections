@@ -72,3 +72,19 @@ func nullString(s *string) sql.NullString {
         Valid:  true,
     }
 }
+
+//funcion para saber si el campo esta escondido o si se puede ver
+func revealOrHidden(visible sql.NullBool, value sql.NullString) string {
+    if visible.Valid && visible.Bool {
+        return value.String
+    }
+    return "not revealed yet..."
+}
+
+//funcion para saber si el campo esta escondido o si se puede ver (versión Date)
+func revealOrHiddenDOB(visible sql.NullBool, value time.Time) string {
+    if visible.Valid && visible.Bool {
+        return value.Format("2006-01-02") //lo convierto en un string
+    }
+    return "not revealed yet..."
+}

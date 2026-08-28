@@ -605,6 +605,29 @@ func (s *state) getUserCard(w http.ResponseWriter, r *http.Request){
 		CreatorID: userID,
 		SubjectID: subjectID,
 	}
+	type responseCard struct {
+		CardID             uuid.UUID `json:"card_id"`
+		ChatID             uuid.UUID `json:"chat_id"`
+		CreatorID          uuid.UUID `json:"creator_id"`
+		SubjectID          uuid.UUID `json:"subject_id"`
+		Nickname           sql.NullString `json:"nickname"`
+		NotesOnSubject     sql.NullString `json:"notes_on_subject"`
+		DisplayNameVisible sql.NullBool `json:"display_name"`
+		DateOfBirthVisible sql.NullBool `json:"date_of_birth"`
+		CityVisible        sql.NullBool `json:"city"`
+		CountryVisible     sql.NullBool `json:"country"`
+		PhotosVisible      sql.NullBool `json:"photos"`
+		BioVisible         sql.NullBool `json:"bio"`
+		HobbiesVisible     sql.NullBool `json:"hobbies"`
+		LanguagesVisible   sql.NullBool `json:"languages"`
+		DisplayName       string `json:"display_name_value"`
+		DateOfBirth       string `json:"date_of_birth_value"`
+		City              string `json:"city_value"`
+		Country           string `json:"country_value"`
+		Bio               string `json:"bio_value"`
+		Hobbies           string `json:"hobbies_value"`
+		Languages         string `json:"languages_value"`
+	}
 	
 	card, err := s.db.GetCardWithChatCreatorAndSubject(r.Context(), cardParams)
 	if err == sql.ErrNoRows{
@@ -621,7 +644,10 @@ func (s *state) getUserCard(w http.ResponseWriter, r *http.Request){
 			return
 		}
 			
-		RespondWithJSON(w, 200, map[string]string{"message": "card created successfully", "card_id": newCard.CardID.String()})
+		RespondWithJSON(w, 200, responseCard{CardID: newCard.CardID, ChatID: chat.ChatID, CreatorID: newCard.CreatorID, SubjectID: newCard.SubjectID, Nickname: newCard.Nickname,
+		NotesOnSubject: newCard.NotesOnSubject, DisplayNameVisible: newCard.DisplayNameVisible, DateOfBirthVisible: newCard.DateOfBirthVisible, 
+		CityVisible: newCard.CityVisible, CountryVisible: newCard.CountryVisible, PhotosVisible: newCard.PhotosVisible, BioVisible: newCard.BioVisible, HobbiesVisible: newCard.HobbiesVisible, 
+		LanguagesVisible: newCard.LanguagesVisible, DisplayName: "", DateOfBirth: "", City: "", Country: "", Bio: "", Hobbies: "", Languages: ""})
 		return
 	}
 	
@@ -629,28 +655,20 @@ func (s *state) getUserCard(w http.ResponseWriter, r *http.Request){
 		RespondWithError(w, 500, "couldn't find the card in the database")
 		return
 	}
-	type responseCard struct {
-		CardID             uuid.UUID `json:"card_id"`
-		ChatID             uuid.UUID `json:"chat_id"`
-		CreatorID          uuid.UUID `json:"creator_id"`
-		SubjectID          uuid.UUID `json:"subject_id"`
-		Nickname           sql.NullString `json:"nickname"`
-		NotesOnSubject     sql.NullString `json:"notes_on_subject"`
-		DisplayNameVisible sql.NullBool `json:"display_name"`
-		DateOfBirthVisible sql.NullBool `json:"date_of_birth"`
-		CityVisible        sql.NullBool `json:"city"`
-		CountryVisible     sql.NullBool `json:"country"`
-		PhotosVisible      sql.NullBool `json:"photos"`
-		BioVisible         sql.NullBool `json:"bio"`
-		HobbiesVisible     sql.NullBool `json:"hobbies"`
-		LanguagesVisible   sql.NullBool `json:"languages"`
-		CreatedAt          time.Time `json:"created_at"`
-		UpdatedAt          time.Time `json:"updated_at"`
+	getCardWithSubjectData, err := s.db.GetCardWithSubjectData(r.Context(), card.CardID)
+	if err != nil{
+		RespondWithError(w, 500, "couldn't get the card data")
+		return
 	}
-	RespondWithJSON(w, 200, responseCard{CardID: card.CardID, ChatID: card.ChatID, CreatorID: card.CreatorID,         
-		SubjectID: card.SubjectID, Nickname: card.Nickname, NotesOnSubject: card.NotesOnSubject, DisplayNameVisible: card.DisplayNameVisible, DateOfBirthVisible: card.DateOfBirthVisible,
-		CityVisible: card.CityVisible, CountryVisible: card.CountryVisible, PhotosVisible: card.PhotosVisible, BioVisible: card.BioVisible, HobbiesVisible: card.HobbiesVisible,
-		LanguagesVisible: card.LanguagesVisible, CreatedAt: card.CreatedAt, UpdatedAt: card.UpdatedAt})
+	
+	RespondWithJSON(w, 200, responseCard{CardID: card.CardID, ChatID: chat.ChatID, CreatorID: card.CreatorID, SubjectID: card.SubjectID, Nickname: card.Nickname,
+	NotesOnSubject: card.NotesOnSubject, DisplayNameVisible: getCardWithSubjectData.DisplayNameVisible, DateOfBirthVisible: getCardWithSubjectData.DateOfBirthVisible, 
+	CityVisible: getCardWithSubjectData.CityVisible, CountryVisible: getCardWithSubjectData.CountryVisible, PhotosVisible: getCardWithSubjectData.PhotosVisible, BioVisible: getCardWithSubjectData.BioVisible, HobbiesVisible: getCardWithSubjectData.HobbiesVisible, 
+	LanguagesVisible: getCardWithSubjectData.LanguagesVisible, DisplayName: revealOrHidden(getCardWithSubjectData.DisplayNameVisible, getCardWithSubjectData.DisplayName),
+	DateOfBirth: revealOrHiddenDOB(getCardWithSubjectData.DateOfBirthVisible, getCardWithSubjectData.DateOfBirth),
+	City: revealOrHidden(getCardWithSubjectData.CityVisible, getCardWithSubjectData.City), Country: revealOrHidden(getCardWithSubjectData.CountryVisible, getCardWithSubjectData.Country),
+	Bio: revealOrHidden(getCardWithSubjectData.BioVisible, getCardWithSubjectData.Bio), Hobbies: revealOrHidden(getCardWithSubjectData.HobbiesVisible, getCardWithSubjectData.Hobbies),
+	Languages: revealOrHidden(getCardWithSubjectData.LanguagesVisible, getCardWithSubjectData.Languages)})
 }
 
 type createNickname struct {
@@ -847,6 +865,8 @@ func (s *state) updateNotesOnSubject(w http.ResponseWriter, r *http.Request){
 		LanguagesVisible: updatedCard.LanguagesVisible, CreatedAt: updatedCard.CreatedAt, UpdatedAt: updatedCard.UpdatedAt})
 }
 
+
+
 //el state es el receiver, (el objeto que está ejecutando el método)
 //cuando handlers() escribe s.register, ese s es el mismo que le llegó a handlers(),  necesita recibir la instancia de alguna manera 
 func (s *state) handlers() {
@@ -863,8 +883,10 @@ func (s *state) handlers() {
 	
 	http.Handle("PATCH /me", s.authMiddleware(http.HandlerFunc(s.updateFields)))
 	http.Handle("GET /chats/{chatID}/card", s.authMiddleware(http.HandlerFunc(s.getUserCard)))
+
 	http.Handle("PATCH /chats/{chatID}/card/nickname", s.authMiddleware(http.HandlerFunc(s.updateNickname)))
 	http.Handle("PATCH /chats/{chatID}/card/notes", s.authMiddleware(http.HandlerFunc(s.updateNotesOnSubject)))
+	
 	http.Handle("GET /me", s.authMiddleware(http.HandlerFunc(s.getMe)))
 	//s.getMe es un handler, pero no cumple la interfaz http.Handler. entonces lo envolvemos en http.HandlerFunc para que cumpla la interfaz.
 	//s.authMiddleware es un middleware que toma un handler y devuelve un handler. entonces le pasamos el handler envuelto en http.HandlerFunc, y nos devuelve otro handler que valida el JWT antes de ejecutar s.getMe.

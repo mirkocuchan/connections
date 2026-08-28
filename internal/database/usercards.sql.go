@@ -395,8 +395,9 @@ func (q *Queries) RevealPhotosField(ctx context.Context, cardID uuid.UUID) error
 	return err
 }
 
-const updateNickname = `-- name: UpdateNickname :exec
-UPDATE cards SET nickname = $1, updated_at = Now()  WHERE card_id = $2
+const updateNickname = `-- name: UpdateNickname :one
+UPDATE cards SET nickname = $1, updated_at = Now() WHERE card_id = $2
+RETURNING card_id, chat_id, creator_id, subject_id, nickname, notes_on_subject, display_name_visible, date_of_birth_visible, city_visible, country_visible, photos_visible, bio_visible, hobbies_visible, languages_visible, created_at, updated_at
 `
 
 type UpdateNicknameParams struct {
@@ -404,7 +405,60 @@ type UpdateNicknameParams struct {
 	CardID   uuid.UUID
 }
 
-func (q *Queries) UpdateNickname(ctx context.Context, arg UpdateNicknameParams) error {
-	_, err := q.db.ExecContext(ctx, updateNickname, arg.Nickname, arg.CardID)
-	return err
+func (q *Queries) UpdateNickname(ctx context.Context, arg UpdateNicknameParams) (Card, error) {
+	row := q.db.QueryRowContext(ctx, updateNickname, arg.Nickname, arg.CardID)
+	var i Card
+	err := row.Scan(
+		&i.CardID,
+		&i.ChatID,
+		&i.CreatorID,
+		&i.SubjectID,
+		&i.Nickname,
+		&i.NotesOnSubject,
+		&i.DisplayNameVisible,
+		&i.DateOfBirthVisible,
+		&i.CityVisible,
+		&i.CountryVisible,
+		&i.PhotosVisible,
+		&i.BioVisible,
+		&i.HobbiesVisible,
+		&i.LanguagesVisible,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateNotesOnSubject = `-- name: UpdateNotesOnSubject :one
+UPDATE cards SET notes_on_subject = $1, updated_at = Now() WHERE card_id = $2
+RETURNING card_id, chat_id, creator_id, subject_id, nickname, notes_on_subject, display_name_visible, date_of_birth_visible, city_visible, country_visible, photos_visible, bio_visible, hobbies_visible, languages_visible, created_at, updated_at
+`
+
+type UpdateNotesOnSubjectParams struct {
+	NotesOnSubject sql.NullString
+	CardID         uuid.UUID
+}
+
+func (q *Queries) UpdateNotesOnSubject(ctx context.Context, arg UpdateNotesOnSubjectParams) (Card, error) {
+	row := q.db.QueryRowContext(ctx, updateNotesOnSubject, arg.NotesOnSubject, arg.CardID)
+	var i Card
+	err := row.Scan(
+		&i.CardID,
+		&i.ChatID,
+		&i.CreatorID,
+		&i.SubjectID,
+		&i.Nickname,
+		&i.NotesOnSubject,
+		&i.DisplayNameVisible,
+		&i.DateOfBirthVisible,
+		&i.CityVisible,
+		&i.CountryVisible,
+		&i.PhotosVisible,
+		&i.BioVisible,
+		&i.HobbiesVisible,
+		&i.LanguagesVisible,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
