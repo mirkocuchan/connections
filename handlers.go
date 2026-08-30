@@ -987,7 +987,6 @@ func (s *state) revealAllFields(w http.ResponseWriter, r *http.Request){
 		return
 	}
 
-	fieldToReveal := r.PathValue("field")
 	chatIDString := r.PathValue("chatID")
 	chatID, err := uuid.Parse(chatIDString)
 	if err != nil {
