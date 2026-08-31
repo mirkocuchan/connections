@@ -13,10 +13,10 @@ import(
 )
 
 type receivedUser struct {
-	Username string
-	Email string
-	Password string
-	DateOfBirth Date
+	Username    string `json:"username"`
+	Email       string `json:"email"`
+	Password    string `json:"password"`
+	DateOfBirth Date   `json:"date_of_birth"`
 }
 
 func (s *state) register(w http.ResponseWriter, r *http.Request){
@@ -632,7 +632,7 @@ func (s *state) getUserCard(w http.ResponseWriter, r *http.Request){
 	card, err := s.db.GetCardWithChatCreatorAndSubject(r.Context(), cardParams)
 	if err == sql.ErrNoRows{
 		//si no hay card, la creo. si hay card, devuelvo la card existente.
-		newCardParams := database.CreateCardParams{
+		newCardParams := database.CreateUserCardParams{
 			ChatID: chatID,
 			CreatorID: userID,
 			SubjectID: subjectID,
@@ -735,11 +735,14 @@ func (s *state) updateNickname(w http.ResponseWriter, r *http.Request){
 		RespondWithError(w, 500, "card does not exist or couldn't get it")
 		return
 	}
+	
 	updateNicknameParams := database.UpdateNicknameParams{
-		Nickname: body.Nickname,
+		Nickname: sql.NullString{
+		String: body.Nickname,
+		Valid:  true,},
 		CardID: card.CardID,
 	}
-	updatedCard, err = s.db.UpdateNickname(r.Context(), updateNicknameParams)
+	updatedCard, err := s.db.UpdateNickname(r.Context(), updateNicknameParams)
 	if err != nil{
 		RespondWithError(w, 500, "couldn't update the nickname")
 		return
@@ -833,7 +836,9 @@ func (s *state) updateNotesOnSubject(w http.ResponseWriter, r *http.Request){
 		return
 	}
 	updateNotesOnSubjectParams := database.UpdateNotesOnSubjectParams{
-		NotesOnSubject: body.Notes,
+		NotesOnSubject: sql.NullString{
+		String: body.Notes,
+		Valid:  true,},
 		CardID: card.CardID,
 	}
 	updatedCard, err := s.db.UpdateNotesOnSubject(r.Context(), updateNotesOnSubjectParams)
@@ -908,7 +913,7 @@ func (s *state) revealAField(w http.ResponseWriter, r *http.Request){
 	
 	card, err := s.db.GetCardWithChatCreatorAndSubject(r.Context(), cardParams)
 	if err == sql.ErrNoRows {
-		newCardParams := database.CreateCardParams{
+		newCardParams := database.CreateUserCardParams{
 			ChatID:    chatID,
 			CreatorID: subjectID,
 			SubjectID: userID,
@@ -1021,7 +1026,7 @@ func (s *state) revealAllFields(w http.ResponseWriter, r *http.Request){
 	
 	card, err := s.db.GetCardWithChatCreatorAndSubject(r.Context(), cardParams)
 	if err == sql.ErrNoRows {
-		newCardParams := database.CreateCardParams{
+		newCardParams := database.CreateUserCardParams{
 			ChatID:    chatID,
 			CreatorID: subjectID,
 			SubjectID: userID,
