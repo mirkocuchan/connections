@@ -1045,6 +1045,113 @@ func (s *state) revealAllFields(w http.ResponseWriter, r *http.Request){
 	RespondWithJSON(w, 200, map[string]string{"message": "fields revealed", "card_id": card.CardID.String()})
 }
 
+func (s *state) resetCard(w http.ResponseWriter, r *http.Request){
+	//the one that is reseting the card
+	userID, err := s.getUserIDFromContext(r)
+	if err != nil{
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
+
+	chatIDString := r.PathValue("chatID")
+	chatID, err := uuid.Parse(chatIDString)
+	if err != nil {
+    	RespondWithError(w, 404, "Invalid chat ID")
+    	return
+	}
+	
+	chat, err := s.db.GetChatByID(r.Context(), chatID)
+	if err != nil{
+		RespondWithError(w, 404, "chat doesn't exist in the database")
+    	return
+	}
+
+	var subjectID uuid.UUID
+	if chat.UserOneID == userID {
+		subjectID = chat.UserTwoID
+	} else {
+		subjectID = chat.UserOneID
+	}
+
+	if chat.UserOneID != userID && chat.UserTwoID != userID{
+		RespondWithError(w, 403, "you are not a participant of this chat, you can't delete it")
+		return
+	}//me fijo si pertenece a alguno de los dos usuarios del chat. si no, devuelvo 403 forbidden.
+
+	//cardParams
+	cardParams := database.GetCardWithChatCreatorAndSubjectParams{
+		ChatID: chatID,
+		CreatorID: userID,
+		SubjectID: subjectID,
+	}
+	
+	card, err := s.db.GetCardWithChatCreatorAndSubject(r.Context(), cardParams)
+	if err == sql.ErrNoRows{
+		RespondWithError(w, 500, "card does not exist or couldn't get it")
+		return
+	}
+	err = s.db.ResetCard(r.Context(), card.CardID)
+	if err != nil{
+		RespondWithError(w, 500, "couldn't reset the card")
+		return
+	}
+	RespondWithJSON(w, 200, map[string]string{"message": "card reset", "card_id": card.CardID.String()})
+}
+
+func (s *state) getChats(w http.ResponseWriter, r *http.Request){
+	//userID's chats
+	userID, err := s.getUserIDFromContext(r)
+	if err != nil{
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
+
+	chats, err := s.db.GetChatsByUserID(r.Context(), userID)
+	if err != nil{
+		RespondWithError(w, 404, "chat doesn't exist in the database")
+    	return
+	}
+
+	type chatResponse struct {
+		ChatID    uuid.UUID `json:"chat_id"`
+		UserOneID uuid.UUID `json:"creator_id"`
+		UserTwoID uuid.UUID    `json:"subject_id"`
+		Nickname string `json:"nickname"`
+		CreatedAt time.Time `json:"created_at"`
+		UpdatedAt time.Time `json:"updated_at"`
+	}
+	chatsResponse := []chatResponse{}
+	for _, chat := range chats{
+		var otherUserID uuid.UUID
+		if chat.UserOneID == userID {
+			otherUserID = chat.UserTwoID
+		} else {
+			otherUserID = chat.UserOneID
+		}
+
+		cardParams := database.GetCardWithChatCreatorAndSubjectParams{
+			ChatID:    chat.ChatID,
+			CreatorID: userID,
+			SubjectID: otherUserID,
+		}
+		card, err := s.db.GetCardWithChatCreatorAndSubject(r.Context(), cardParams)
+		displayName := "anon-" + otherUserID.String()[:8]  // placeholder por default
+		if err == nil && card.Nickname.Valid {
+			displayName = card.Nickname.String
+		}
+		chatsResponse = append(chatsResponse, chatResponse{
+        ChatID:    chat.ChatID,
+        UserOneID: chat.UserOneID,
+        UserTwoID: chat.UserTwoID,
+        Nickname:  displayName,
+        CreatedAt: chat.CreatedAt,
+        UpdatedAt: chat.UpdatedAt,
+    	})
+	}
+
+	RespondWithJSON(w, 200, chatsResponse)
+}
+
 //el state es el receiver, (el objeto que está ejecutando el método)
 //cuando handlers() escribe s.register, ese s es el mismo que le llegó a handlers(),  necesita recibir la instancia de alguna manera 
 func (s *state) handlers() {
@@ -1061,11 +1168,14 @@ func (s *state) handlers() {
 	
 	http.Handle("PATCH /me", s.authMiddleware(http.HandlerFunc(s.updateFields)))
 	http.Handle("GET /chats/{chatID}/card", s.authMiddleware(http.HandlerFunc(s.getUserCard)))
+	http.Handle("GET /chats", s.authMiddleware(http.HandlerFunc(s.getChats)))
 
 	http.Handle("PATCH /chats/{chatID}/card/nickname", s.authMiddleware(http.HandlerFunc(s.updateNickname)))
 	http.Handle("PATCH /chats/{chatID}/card/notes", s.authMiddleware(http.HandlerFunc(s.updateNotesOnSubject)))
 	http.Handle("POST /chats/{chatID}/card/reveal/{field}", s.authMiddleware(http.HandlerFunc(s.revealAField)))
 	http.Handle("POST /chats/{chatID}/card/reveal-all", s.authMiddleware(http.HandlerFunc(s.revealAllFields)))
+
+	http.Handle("PATCH /chats/{chatID}/card/reset", s.authMiddleware(http.HandlerFunc(s.resetCard)))
 
 	http.Handle("GET /me", s.authMiddleware(http.HandlerFunc(s.getMe)))
 	//s.getMe es un handler, pero no cumple la interfaz http.Handler. entonces lo envolvemos en http.HandlerFunc para que cumpla la interfaz.
