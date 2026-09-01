@@ -53,12 +53,46 @@ func (q *Queries) CreateUserCard(ctx context.Context, arg CreateUserCardParams) 
 	return i, err
 }
 
+const createUserPhoto = `-- name: CreateUserPhoto :one
+INSERT INTO user_photos (user_id, photo_url, position)
+VALUES ($1, $2, $3)
+RETURNING photo_id, user_id, photo_url, position, created_at
+`
+
+type CreateUserPhotoParams struct {
+	UserID   uuid.UUID
+	PhotoUrl string
+	Position int32
+}
+
+func (q *Queries) CreateUserPhoto(ctx context.Context, arg CreateUserPhotoParams) (UserPhoto, error) {
+	row := q.db.QueryRowContext(ctx, createUserPhoto, arg.UserID, arg.PhotoUrl, arg.Position)
+	var i UserPhoto
+	err := row.Scan(
+		&i.PhotoID,
+		&i.UserID,
+		&i.PhotoUrl,
+		&i.Position,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const deleteCard = `-- name: DeleteCard :exec
 DELETE FROM cards WHERE card_id = $1
 `
 
 func (q *Queries) DeleteCard(ctx context.Context, cardID uuid.UUID) error {
 	_, err := q.db.ExecContext(ctx, deleteCard, cardID)
+	return err
+}
+
+const deleteUserPhoto = `-- name: DeleteUserPhoto :exec
+DELETE FROM user_photos WHERE photo_id = $1
+`
+
+func (q *Queries) DeleteUserPhoto(ctx context.Context, photoID uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, deleteUserPhoto, photoID)
 	return err
 }
 

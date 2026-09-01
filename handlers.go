@@ -1157,6 +1157,53 @@ func (s *state) getChats(w http.ResponseWriter, r *http.Request){
 	RespondWithJSON(w, 200, chatsResponse)
 }
 
+type createPhotoStruct struct {
+	PhotoData string `json:"photo_data"`
+	Position int `json:"position"`
+}
+func (s *state) createPhoto(w http.ResponseWriter, r *http.Request){
+	defer r.Body.Close()
+
+	imageData, err := io.ReadAll(r.Body)
+	if err != nil{
+		RespondWithError(w, 400, "couldn't read the request body")
+		return
+	}
+	
+	var body createPhotoStruct
+	if err := json.Unmarshal(messageData, &body); err != nil {
+        RespondWithError(w, 400, "error unmarshalling JSON")
+		return
+    }
+	//getting the photo that is being created
+	
+	//userID is the one that is uploading the photo
+	userID, err := s.getUserIDFromContext(r)
+	if err != nil{
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
+	photoParams := database.CreateUserPhotoParams{
+		UserID:   userID,
+		PhotoUrl: body.PhotoData,
+		Position: int32(body.Position),
+	}
+
+	userPhoto, err := s.db.CreateUserPhoto(r.Context(), photoParams)
+	if err != nil{
+		RespondWithError(w, 500, "couldn't create the photo in the database")
+		return
+	}
+	type responsePhoto struct {
+		PhotoID uuid.UUID `json:"photo_id"`
+		UserID  uuid.UUID `json:"user_id"`
+		PhotoUrl string   `json:"photo_url"`
+		Position int32    `json:"position"`
+		CreatedAt time.Time `json:"created_at"`
+		UpdatedAt time.Time `json:"updated_at"`
+	}
+	RespondWithJSON(w, 200, responsePhoto{PhotoID: userPhoto.PhotoID, UserID: userPhoto.UserID, PhotoUrl: userPhoto.PhotoUrl, Position: userPhoto.Position, CreatedAt: userPhoto.CreatedAt, UpdatedAt: userPhoto.UpdatedAt})
+}
 //el state es el receiver, (el objeto que está ejecutando el método)
 //cuando handlers() escribe s.register, ese s es el mismo que le llegó a handlers(),  necesita recibir la instancia de alguna manera 
 func (s *state) handlers() {
@@ -1188,4 +1235,6 @@ func (s *state) handlers() {
 	//entonces, cuando llega una request a /me, primero pasa por s.authMiddleware, que valida el JWT y pone el userID en el contexto de la request, y luego ejecuta s.getMe con ese contexto.
 	//s.getMe puede acceder al userID del contexto de la request gracias a s.authMiddleware. si no hubiera pasado por el middleware, s.getMe no podría acceder al userID y devolvería un error 401.
 	//resumen: s.getMe (tu handler) → envuelto en http.HandlerFunc (para que cumpla la interfaz http.Handler que authMiddleware espera recibir) → envuelto en s.authMiddleware (que valida el JWT antes de dejarlo pasar) → registrado con http.Handle.
+
+	http.Handle("POST /me/photos", s.authMiddleware(http.HandlerFunc(s.uploadPhoto)))
 }

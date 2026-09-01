@@ -74,6 +74,14 @@ UPDATE cards SET date_of_birth_visible = true WHERE card_id = $1;
 -- name: GetUserPhotos :many
 SELECT * FROM user_photos WHERE user_id = $1 ORDER BY position;
 
+-- name: CreateUserPhoto :one
+INSERT INTO user_photos (user_id, photo_url, position)
+VALUES ($1, $2, $3)
+RETURNING *;
+
+-- name: DeleteUserPhoto :exec
+DELETE FROM user_photos WHERE photo_id = $1;
+
 -- name: GetCardWithSubjectData :one
 SELECT 
     c.card_id,
