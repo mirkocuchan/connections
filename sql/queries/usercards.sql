@@ -74,13 +74,16 @@ UPDATE cards SET date_of_birth_visible = true WHERE card_id = $1;
 -- name: GetUserPhotos :many
 SELECT * FROM user_photos WHERE user_id = $1 ORDER BY position;
 
+-- name: GetUserPhotoByID :one
+SELECT * FROM user_photos WHERE photo_id = $1 AND user_id = $2;
+
 -- name: CreateUserPhoto :one
 INSERT INTO user_photos (user_id, photo_url, position)
 VALUES ($1, $2, $3)
 RETURNING *;
 
 -- name: DeleteUserPhoto :exec
-DELETE FROM user_photos WHERE photo_id = $1;
+DELETE FROM user_photos WHERE photo_id = $1 AND user_id = $2;
 
 -- name: GetCardWithSubjectData :one
 SELECT 
@@ -111,3 +114,10 @@ WHERE c.card_id = $1;
 
 -- name: GetCardWithChatCreatorAndSubject :one
 SELECT * FROM cards WHERE chat_id = $1 AND creator_id = $2 AND subject_id = $3;
+
+-- name: GetDiscoverableUsers :many
+SELECT * FROM users WHERE user_id <> $1 AND user_id NOT IN (SELECT user_one_id FROM chats WHERE user_two_id = $1 UNION SELECT user_two_id FROM chats WHERE user_one_id = $1) 
+ORDER BY RANDOM() LIMIT 30;  
+
+-- name: GetPrimaryUserPhoto :one
+SELECT * FROM user_photos WHERE user_id = $1 ORDER BY position LIMIT 1;

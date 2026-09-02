@@ -88,11 +88,16 @@ func (q *Queries) DeleteCard(ctx context.Context, cardID uuid.UUID) error {
 }
 
 const deleteUserPhoto = `-- name: DeleteUserPhoto :exec
-DELETE FROM user_photos WHERE photo_id = $1
+DELETE FROM user_photos WHERE photo_id = $1 AND user_id = $2
 `
 
-func (q *Queries) DeleteUserPhoto(ctx context.Context, photoID uuid.UUID) error {
-	_, err := q.db.ExecContext(ctx, deleteUserPhoto, photoID)
+type DeleteUserPhotoParams struct {
+	PhotoID uuid.UUID
+	UserID  uuid.UUID
+}
+
+func (q *Queries) DeleteUserPhoto(ctx context.Context, arg DeleteUserPhotoParams) error {
+	_, err := q.db.ExecContext(ctx, deleteUserPhoto, arg.PhotoID, arg.UserID)
 	return err
 }
 
@@ -211,6 +216,65 @@ func (q *Queries) GetCardWithSubjectData(ctx context.Context, cardID uuid.UUID) 
 	return i, err
 }
 
+const getDiscoverableUsers = `-- name: GetDiscoverableUsers :many
+SELECT user_id, username, email, password_hash, date_of_birth, created_at, updated_at, display_name, bio, city, country, hobbies, languages FROM users WHERE user_id <> $1 AND user_id NOT IN (SELECT user_one_id FROM chats WHERE user_two_id = $1 UNION SELECT user_two_id FROM chats WHERE user_one_id = $1) 
+ORDER BY RANDOM() LIMIT 30
+`
+
+func (q *Queries) GetDiscoverableUsers(ctx context.Context, userID uuid.UUID) ([]User, error) {
+	rows, err := q.db.QueryContext(ctx, getDiscoverableUsers, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []User
+	for rows.Next() {
+		var i User
+		if err := rows.Scan(
+			&i.UserID,
+			&i.Username,
+			&i.Email,
+			&i.PasswordHash,
+			&i.DateOfBirth,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DisplayName,
+			&i.Bio,
+			&i.City,
+			&i.Country,
+			&i.Hobbies,
+			&i.Languages,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getPrimaryUserPhoto = `-- name: GetPrimaryUserPhoto :one
+SELECT photo_id, user_id, photo_url, position, created_at FROM user_photos WHERE user_id = $1 ORDER BY position LIMIT 1
+`
+
+func (q *Queries) GetPrimaryUserPhoto(ctx context.Context, userID uuid.UUID) (UserPhoto, error) {
+	row := q.db.QueryRowContext(ctx, getPrimaryUserPhoto, userID)
+	var i UserPhoto
+	err := row.Scan(
+		&i.PhotoID,
+		&i.UserID,
+		&i.PhotoUrl,
+		&i.Position,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getUserCardByChatAndUsers = `-- name: GetUserCardByChatAndUsers :one
 SELECT card_id, chat_id, creator_id, subject_id, nickname, notes_on_subject, display_name_visible, date_of_birth_visible, city_visible, country_visible, photos_visible, bio_visible, hobbies_visible, languages_visible, created_at, updated_at FROM cards WHERE card_id = $1 AND creator_id = $2 AND subject_id = $3
 `
@@ -287,6 +351,28 @@ func (q *Queries) GetUserCardsByCreator(ctx context.Context, creatorID uuid.UUID
 		return nil, err
 	}
 	return items, nil
+}
+
+const getUserPhotoByID = `-- name: GetUserPhotoByID :one
+SELECT photo_id, user_id, photo_url, position, created_at FROM user_photos WHERE photo_id = $1 AND user_id = $2
+`
+
+type GetUserPhotoByIDParams struct {
+	PhotoID uuid.UUID
+	UserID  uuid.UUID
+}
+
+func (q *Queries) GetUserPhotoByID(ctx context.Context, arg GetUserPhotoByIDParams) (UserPhoto, error) {
+	row := q.db.QueryRowContext(ctx, getUserPhotoByID, arg.PhotoID, arg.UserID)
+	var i UserPhoto
+	err := row.Scan(
+		&i.PhotoID,
+		&i.UserID,
+		&i.PhotoUrl,
+		&i.Position,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const getUserPhotos = `-- name: GetUserPhotos :many

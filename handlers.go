@@ -1154,14 +1154,14 @@ func (s *state) getChats(w http.ResponseWriter, r *http.Request){
     	})
 	}
 
-	RespondWithJSON(w, 200, chatsResponse)
+	RespondWithJSON(w, 200, map[string]string{"message": "chats retrieved", "userID": userID.String()})
 }
 
 type createPhotoStruct struct {
-	PhotoData string `json:"photo_data"`
+	PhotoURL string `json:"photo_url"`
 	Position int `json:"position"`
 }
-func (s *state) createPhoto(w http.ResponseWriter, r *http.Request){
+func (s *state) uploadPhoto(w http.ResponseWriter, r *http.Request){
 	defer r.Body.Close()
 
 	imageData, err := io.ReadAll(r.Body)
@@ -1171,7 +1171,7 @@ func (s *state) createPhoto(w http.ResponseWriter, r *http.Request){
 	}
 	
 	var body createPhotoStruct
-	if err := json.Unmarshal(messageData, &body); err != nil {
+	if err := json.Unmarshal(imageData, &body); err != nil {
         RespondWithError(w, 400, "error unmarshalling JSON")
 		return
     }
@@ -1185,7 +1185,7 @@ func (s *state) createPhoto(w http.ResponseWriter, r *http.Request){
 	}
 	photoParams := database.CreateUserPhotoParams{
 		UserID:   userID,
-		PhotoUrl: body.PhotoData,
+		PhotoUrl: body.PhotoURL,
 		Position: int32(body.Position),
 	}
 
@@ -1202,8 +1202,96 @@ func (s *state) createPhoto(w http.ResponseWriter, r *http.Request){
 		CreatedAt time.Time `json:"created_at"`
 		UpdatedAt time.Time `json:"updated_at"`
 	}
-	RespondWithJSON(w, 200, responsePhoto{PhotoID: userPhoto.PhotoID, UserID: userPhoto.UserID, PhotoUrl: userPhoto.PhotoUrl, Position: userPhoto.Position, CreatedAt: userPhoto.CreatedAt, UpdatedAt: userPhoto.UpdatedAt})
+	RespondWithJSON(w, 201, responsePhoto{PhotoID: userPhoto.PhotoID, UserID: userPhoto.UserID, PhotoUrl: userPhoto.PhotoUrl, Position: userPhoto.Position, CreatedAt: userPhoto.CreatedAt, UpdatedAt: userPhoto.UpdatedAt})
 }
+
+func (s *state) getPhotos(w http.ResponseWriter, r *http.Request){
+	//userID's photos
+	userID, err := s.getUserIDFromContext(r)
+	if err != nil{
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
+	photos, err := s.db.GetUserPhotos(r.Context(), userID)
+	if err != nil{
+		RespondWithError(w, 404, "photos don't exist in the database")
+		return
+	}
+	RespondWithJSON(w, 200, photos)
+}
+
+func (s *state) deletePhoto(w http.ResponseWriter, r *http.Request){
+	//userID's photos
+	userID, err := s.getUserIDFromContext(r)
+	if err != nil{
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
+	photoIDString := r.PathValue("photoID")
+	photoID, err := uuid.Parse(photoIDString)
+	if err != nil {
+    	RespondWithError(w, 404, "Invalid photo ID")
+    	return
+	}
+
+	getUserPhotoByIDParams := database.GetUserPhotoByIDParams{
+		PhotoID: photoID,
+		UserID:  userID,
+	}
+
+	userPhoto, err := s.db.GetUserPhotoByID(r.Context(), getUserPhotoByIDParams)
+	if err != nil {
+		RespondWithError(w, 404, "Photo not found")
+		return
+	}
+	deleteParams := database.DeleteUserPhotoParams{
+		PhotoID: userPhoto.PhotoID,
+		UserID:  userID,
+	}
+	err = s.db.DeleteUserPhoto(r.Context(), deleteParams)
+	if err != nil{
+		RespondWithError(w, 500, "could not delete the photo")
+		return
+	}
+	RespondWithJSON(w, 200, map[string]string{"message": "photo deleted successfully"})
+}
+
+func (s *state) discoverUsers(w http.ResponseWriter, r *http.Request){
+	//userID's discovery
+	userID, err := s.getUserIDFromContext(r)
+	if err != nil{
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
+
+	discoverableUsers, err := s.db.GetDiscoverableUsers(r.Context(), userID)
+	if err != nil{
+		RespondWithError(w, 500, "could not discover users")
+		return
+	}
+	
+	type discoverUserResponse struct {
+    	UserID      uuid.UUID `json:"user_id"`
+    	DisplayName string    `json:"display_name"`
+    	PhotoURL    string    `json:"photo_url"`
+	}
+	usersResponse := []discoverUserResponse{}
+	for _, user := range discoverableUsers {
+		primaryPhoto, err := s.db.GetPrimaryUserPhoto(r.Context(), user.UserID)
+		if err != nil {
+			continue //este usuario no tiene foto, no lo mostramos
+		}
+
+		usersResponse = append(usersResponse, discoverUserResponse{
+			UserID:      user.UserID,
+			DisplayName: user.Username,
+			PhotoURL:    primaryPhoto.PhotoUrl,
+		})
+	}
+
+	RespondWithJSON(w, 200, usersResponse)
+}
+
 //el state es el receiver, (el objeto que está ejecutando el método)
 //cuando handlers() escribe s.register, ese s es el mismo que le llegó a handlers(),  necesita recibir la instancia de alguna manera 
 func (s *state) handlers() {
@@ -1237,4 +1325,8 @@ func (s *state) handlers() {
 	//resumen: s.getMe (tu handler) → envuelto en http.HandlerFunc (para que cumpla la interfaz http.Handler que authMiddleware espera recibir) → envuelto en s.authMiddleware (que valida el JWT antes de dejarlo pasar) → registrado con http.Handle.
 
 	http.Handle("POST /me/photos", s.authMiddleware(http.HandlerFunc(s.uploadPhoto)))
+	http.Handle("GET /me/photos", s.authMiddleware(http.HandlerFunc(s.getPhotos)))
+	http.Handle("DELETE /me/photos/{photoID}", s.authMiddleware(http.HandlerFunc(s.deletePhoto)))
+
+	http.Handle("GET /users/discover", s.authMiddleware(http.HandlerFunc(s.discoverUsers)))
 }
