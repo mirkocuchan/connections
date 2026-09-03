@@ -56,6 +56,21 @@ type RefreshToken struct {
 	UserID    uuid.UUID
 }
 
+type Story struct {
+	StoryID   uuid.UUID
+	UserID    uuid.UUID
+	MediaUrl  string
+	MediaType string
+	CreatedAt time.Time
+	ExpiresAt time.Time
+}
+
+type StoryView struct {
+	StoryID  uuid.UUID
+	ViewerID uuid.UUID
+	ViewedAt time.Time
+}
+
 type User struct {
 	UserID       uuid.UUID
 	Username     string
