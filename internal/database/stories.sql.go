@@ -14,11 +14,12 @@ import (
 )
 
 const createStory = `-- name: CreateStory :one
-INSERT INTO stories (user_id, media_url, media_type)
+INSERT INTO stories (user_id, media_url, media_type, expires_at)
 VALUES (
     $1,
     $2,
-    $3
+    $3,
+    $4
 )
 RETURNING story_id, user_id, media_url, media_type, created_at, expires_at
 `
@@ -27,10 +28,16 @@ type CreateStoryParams struct {
 	UserID    uuid.UUID
 	MediaUrl  string
 	MediaType string
+	ExpiresAt time.Time
 }
 
 func (q *Queries) CreateStory(ctx context.Context, arg CreateStoryParams) (Story, error) {
-	row := q.db.QueryRowContext(ctx, createStory, arg.UserID, arg.MediaUrl, arg.MediaType)
+	row := q.db.QueryRowContext(ctx, createStory,
+		arg.UserID,
+		arg.MediaUrl,
+		arg.MediaType,
+		arg.ExpiresAt,
+	)
 	var i Story
 	err := row.Scan(
 		&i.StoryID,
@@ -55,6 +62,24 @@ type DeleteStoryByIDParams struct {
 func (q *Queries) DeleteStoryByID(ctx context.Context, arg DeleteStoryByIDParams) error {
 	_, err := q.db.ExecContext(ctx, deleteStoryByID, arg.StoryID, arg.UserID)
 	return err
+}
+
+const didUserViewStory = `-- name: DidUserViewStory :one
+
+SELECT story_id, viewer_id, viewed_at FROM story_views WHERE story_id = $1 AND viewer_id = $2
+`
+
+type DidUserViewStoryParams struct {
+	StoryID  uuid.UUID
+	ViewerID uuid.UUID
+}
+
+// active stories, did i see it or did i not.
+func (q *Queries) DidUserViewStory(ctx context.Context, arg DidUserViewStoryParams) (StoryView, error) {
+	row := q.db.QueryRowContext(ctx, didUserViewStory, arg.StoryID, arg.ViewerID)
+	var i StoryView
+	err := row.Scan(&i.StoryID, &i.ViewerID, &i.ViewedAt)
+	return i, err
 }
 
 const getActiveStories = `-- name: GetActiveStories :many

@@ -1,9 +1,10 @@
 -- name: CreateStory :one
-INSERT INTO stories (user_id, media_url, media_type)
+INSERT INTO stories (user_id, media_url, media_type, expires_at)
 VALUES (
     $1,
     $2,
-    $3
+    $3,
+    $4
 )
 RETURNING *;
 
@@ -26,3 +27,6 @@ INSERT INTO story_views (story_id, viewer_id) VALUES ($1, $2) ON CONFLICT DO NOT
 SELECT stories.*, story_views.viewed_at FROM stories LEFT JOIN story_views ON stories.story_id = story_views.story_id AND story_views.viewer_id = $1 
 WHERE stories.expires_at > NOW() ORDER BY stories.created_at DESC;
 -- active stories, did i see it or did i not.
+
+-- name: DidUserViewStory :one
+SELECT * FROM story_views WHERE story_id = $1 AND viewer_id = $2;

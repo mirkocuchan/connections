@@ -1291,6 +1291,151 @@ func (s *state) discoverUsers(w http.ResponseWriter, r *http.Request){
 
 	RespondWithJSON(w, 200, usersResponse)
 }
+type createStoryStruct struct {
+	MediaURL  string `json:"media_url"`
+	MediaType string `json:"media_type"`
+}
+
+func (s *state) createStory(w http.ResponseWriter, r *http.Request){
+	defer r.Body.Close()
+	//userID's story going to be created
+	userID, err := s.getUserIDFromContext(r)
+	if err != nil{
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
+
+	storyData, err := io.ReadAll(r.Body)
+	if err != nil{
+		RespondWithError(w, 400, "couldn't read the request body")
+		return
+	}
+	
+	var body createStoryStruct
+	if err := json.Unmarshal(storyData, &body); err != nil {
+        RespondWithError(w, 400, "error unmarshalling JSON")
+		return
+    }
+	//getting the story details that is being created
+
+	expiresAt := time.Now().Add(24 * time.Hour)
+	createStoryParams := database.CreateStoryParams{
+		UserID:    userID,
+		MediaUrl:  body.MediaURL,
+		MediaType: body.MediaType,
+		ExpiresAt: expiresAt,
+	}
+	story, err := s.db.CreateStory(r.Context(), createStoryParams)
+	if err != nil{
+		RespondWithError(w, 500, "couldn't create the story in the database")
+		return
+	}
+
+	RespondWithJSON(w, 201, map[string]interface{}{"message": "story created", "story": story})
+}
+
+func (s *state) getActiveStories(w http.ResponseWriter, r *http.Request){
+	//active stories for the logged-in user
+	userID, err := s.getUserIDFromContext(r)
+	if err != nil{
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
+
+	stories, err := s.db.GetStoryViewsByUserID(r.Context(), userID)
+	if err != nil {
+		RespondWithError(w, 500, "couldn't get the active stories from the database")
+		return
+	}
+	type storyResponse struct {
+		StoryID   uuid.UUID `json:"story_id"`
+		UserID    uuid.UUID `json:"user_id"`
+		MediaUrl  string    `json:"media_url"`
+		MediaType string    `json:"media_type"`
+		CreatedAt time.Time `json:"created_at"`
+		ExpiresAt time.Time `json:"expires_at"`
+		ViewedAt  *time.Time `json:"viewed_at,omitempty"`
+	}
+	storiesResponse := []storyResponse{}
+	for _, story := range stories {
+		var viewedAt *time.Time
+		if story.ViewedAt.Valid {
+			viewedAt = &story.ViewedAt.Time
+		}
+
+		storiesResponse = append(storiesResponse, storyResponse{
+			StoryID:   story.StoryID,
+			UserID:    story.UserID,
+			MediaUrl:  story.MediaUrl,
+			MediaType: story.MediaType,
+			CreatedAt: story.CreatedAt,
+			ExpiresAt: story.ExpiresAt,
+			ViewedAt:  viewedAt,
+		})
+	}
+	RespondWithJSON(w, 200, storiesResponse)
+}
+
+func (s *state) viewStory(w http.ResponseWriter, r *http.Request){
+	//userID is the one that is viewing the story
+	userID, err := s.getUserIDFromContext(r)
+	if err != nil{
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
+	storyIDString := r.PathValue("storyID")
+	storyID, err := uuid.Parse(storyIDString)
+	if err != nil {
+    	RespondWithError(w, 404, "Invalid story ID")
+    	return
+	}
+	registerStoryViewParams := database.RegisterStoryViewParams{
+		StoryID:  storyID,
+		ViewerID: userID,
+	}
+	err = s.db.RegisterStoryView(r.Context(), registerStoryViewParams)
+	if err != nil {
+		RespondWithError(w, 500, "couldn't register story view")
+		return
+	}
+	RespondWithJSON(w, 200, map[string]interface{}{"status": "success"})
+}
+
+func (s *state) deleteStory(w http.ResponseWriter, r *http.Request){
+	//userID is the one that is deleting the story
+	userID, err := s.getUserIDFromContext(r)
+	if err != nil{
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
+	storyIDString := r.PathValue("storyID")
+	storyID, err := uuid.Parse(storyIDString)
+	if err != nil {
+    	RespondWithError(w, 404, "Invalid story ID")
+    	return
+	}
+	
+	story, err := s.db.GetStoryByID(r.Context(), storyID)
+	if err != nil {
+		RespondWithError(w, 404, "Story not found")
+		return
+	}
+	if story.UserID != userID {
+		RespondWithError(w, 403, "Forbidden")
+		return
+	}
+	deleteStoryByIDParams := database.DeleteStoryByIDParams{
+		StoryID: storyID,
+		UserID:  userID,
+	}
+
+	err = s.db.DeleteStoryByID(r.Context(), deleteStoryByIDParams)
+	if err != nil {
+		RespondWithError(w, 500, "couldn't delete story")
+		return
+	}
+	RespondWithJSON(w, 200, map[string]interface{}{"status": "success"})
+}
 
 //el state es el receiver, (el objeto que está ejecutando el método)
 //cuando handlers() escribe s.register, ese s es el mismo que le llegó a handlers(),  necesita recibir la instancia de alguna manera 
@@ -1329,4 +1474,13 @@ func (s *state) handlers() {
 	http.Handle("DELETE /me/photos/{photoID}", s.authMiddleware(http.HandlerFunc(s.deletePhoto)))
 
 	http.Handle("GET /users/discover", s.authMiddleware(http.HandlerFunc(s.discoverUsers)))
+
+	http.Handle("POST /me/stories", s.authMiddleware(http.HandlerFunc(s.createStory)))
+	http.Handle("GET /stories", s.authMiddleware(http.HandlerFunc(s.getActiveStories)))
+	http.Handle("POST /stories/{storyID}/view", s.authMiddleware(http.HandlerFunc(s.viewStory)))
+	http.Handle("DELETE /stories/{storyID}", s.authMiddleware(http.HandlerFunc(s.deleteStory)))
 }
+
+
+
+
