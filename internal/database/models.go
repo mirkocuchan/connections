@@ -11,6 +11,12 @@ import (
 	"github.com/google/uuid"
 )
 
+type Block struct {
+	BlockerID uuid.UUID
+	BlockedID uuid.UUID
+	CreatedAt time.Time
+}
+
 type Card struct {
 	CardID             uuid.UUID
 	ChatID             uuid.UUID
@@ -54,6 +60,15 @@ type RefreshToken struct {
 	ExpiresAt time.Time
 	RevokedAt sql.NullTime
 	UserID    uuid.UUID
+}
+
+type Report struct {
+	ReportID   uuid.UUID
+	ReporterID uuid.UUID
+	ReportedID uuid.UUID
+	Reason     string
+	Details    sql.NullString
+	CreatedAt  time.Time
 }
 
 type Story struct {
