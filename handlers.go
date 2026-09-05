@@ -302,7 +302,15 @@ func (s *state) createChat(w http.ResponseWriter, r *http.Request){
 		RespondWithError(w, 401, "Unauthorized")
 		return
 	}
-
+	isBlocked, err := s.isBlocked(r.Context(), userID, body.OtherUserID)
+	if err != nil{
+		RespondWithError(w, 500, "error checking block status")
+		return
+	}
+	if isBlocked{
+		RespondWithError(w, 403, "you have been blocked by this user")
+		return
+	}
 	userIDParams := database.GetChatByUserIDsParams{
 		UserOneID: userID,
 		UserTwoID: body.OtherUserID, // Reemplaza con el userID del otro usuario
@@ -377,6 +385,16 @@ func (s *state) createMessage(w http.ResponseWriter, r *http.Request){
 		RespondWithError(w, 403, "you are not a participant of this chat")
 		return
 	}//me fijo si pertenece a alguno de los dos usuarios del chat. si no, devuelvo 403 forbidden.
+	
+	isBlocked, err := s.isBlocked(r.Context(), chat.UserOneID, chat.UserTwoID)
+	if err != nil{
+		RespondWithError(w, 500, "error checking block status")
+		return
+	}
+	if isBlocked{
+		RespondWithError(w, 403, "you have been blocked by this user")
+		return
+	}
 
 	newMessageParams := database.CreateMessageParams{
 		ChatID:   chatID,
@@ -598,7 +616,15 @@ func (s *state) getUserCard(w http.ResponseWriter, r *http.Request){
 		RespondWithError(w, 403, "you are not a participant of this chat, you can't delete it")
 		return
 	}//me fijo si pertenece a alguno de los dos usuarios del chat. si no, devuelvo 403 forbidden.
-	
+	isBlocked, err := s.isBlocked(r.Context(), userID, subjectID)
+	if err != nil{
+		RespondWithError(w, 500, "error checking block status")
+		return
+	}
+	if isBlocked{
+		RespondWithError(w, 403, "you can't access this profile")
+		return
+	}
 	//cardParams
 	cardParams := database.GetCardWithChatCreatorAndSubjectParams{
 		ChatID: chatID,
@@ -1277,6 +1303,14 @@ func (s *state) discoverUsers(w http.ResponseWriter, r *http.Request){
 	}
 	usersResponse := []discoverUserResponse{}
 	for _, user := range discoverableUsers {
+		isBlocked, err := s.isBlocked(r.Context(), userID, user.UserID)
+		if err != nil{
+			RespondWithError(w, 500, "error checking block status")
+			return
+		}
+		if isBlocked{
+			continue
+		}
 		primaryPhoto, err := s.db.GetPrimaryUserPhoto(r.Context(), user.UserID)
 		if err != nil {
 			continue //este usuario no tiene foto, no lo mostramos
@@ -1437,6 +1471,124 @@ func (s *state) deleteStory(w http.ResponseWriter, r *http.Request){
 	RespondWithJSON(w, 200, map[string]interface{}{"status": "success"})
 }
 
+func (s *state) blockUser(w http.ResponseWriter, r *http.Request){
+	//userID is the one that is blocking another user
+	userID, err := s.getUserIDFromContext(r)
+	if err != nil{
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
+	blockedUserIDString := r.PathValue("userID")
+	blockedUserID, err := uuid.Parse(blockedUserIDString)
+	if err != nil {
+		RespondWithError(w, 404, "Invalid user ID")
+		return
+	}
+	if userID == blockedUserID { 
+		RespondWithError(w, 400, "you can't block yourself")
+		return
+	}
+	createBlockParams := database.CreateBlockParams{
+		BlockerID: userID,
+		BlockedID: blockedUserID,
+	}
+	_, err = s.db.CreateBlock(r.Context(), createBlockParams)
+	if err != nil {
+		RespondWithError(w, 500, "couldn't block user")
+		return
+	}
+	RespondWithJSON(w, 200, map[string]interface{}{"status": "success"})
+}
+
+func (s *state) unblockUser(w http.ResponseWriter, r *http.Request){
+	//userID is the one that is unblocking another user
+	userID, err := s.getUserIDFromContext(r)
+	if err != nil{
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
+	unblockedUserIDString := r.PathValue("userID")
+	unblockedUserID, err := uuid.Parse(unblockedUserIDString)
+	if err != nil {
+		RespondWithError(w, 404, "Invalid user ID")
+		return
+	}
+	deleteBlockByBlockerAndBlockedIDParams := database.DeleteBlockByBlockerAndBlockedIDParams{
+		BlockerID: userID,
+		BlockedID: unblockedUserID,
+	}
+	err = s.db.DeleteBlockByBlockerAndBlockedID(r.Context(), deleteBlockByBlockerAndBlockedIDParams)
+	if err != nil {
+		RespondWithError(w, 500, "couldn't unblock user")
+		return
+	}
+	RespondWithJSON(w, 200, map[string]interface{}{"status": "success"})
+}
+
+func (s *state) getBlockedUsers(w http.ResponseWriter, r *http.Request){
+	//userID is the one that is asking for their blocked list
+	userID, err := s.getUserIDFromContext(r)
+	if err != nil{
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
+	blockedUsers, err := s.db.GetBlocksByBlockerID(r.Context(), userID)
+	if err != nil {
+		RespondWithError(w, 500, "couldn't get blocked users")
+		return
+	}
+	RespondWithJSON(w, 200, blockedUsers)
+}
+
+type reportRequest struct {
+	Reason     string         `json:"reason"`
+	Details    sql.NullString `json:"details"`
+}
+func (s *state) reportUser(w http.ResponseWriter, r *http.Request){
+	defer r.Body.Close()
+
+	reportData, err := io.ReadAll(r.Body)
+	if err != nil{
+		RespondWithError(w, 400, "couldn't read the request body")
+		return
+	}
+	
+	var body reportRequest
+	if err := json.Unmarshal(reportData, &body); err != nil {
+        RespondWithError(w, 400, "error unmarshalling JSON")
+		return
+    }
+	//getting the content of the report that is being generated
+	
+	//userID is the one reporting another user
+	userID, err := s.getUserIDFromContext(r)
+	if err != nil{
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
+
+	reportedUserIDString := r.PathValue("userID")
+	reportedUserID, err := uuid.Parse(reportedUserIDString)
+	if err != nil {
+		RespondWithError(w, 404, "Invalid user ID")
+		return
+	}
+
+	createReportParams := database.CreateReportParams{
+		ReporterID: userID,
+		ReportedID: reportedUserID,
+		Reason:     body.Reason,
+		Details:    sql.NullString{String: body.Details, Valid: body.Details != ""},
+	}
+	report, err := s.db.CreateReport(r.Context(), createReportParams)
+	if err != nil {
+		RespondWithError(w, 500, "couldn't create report")
+		return
+	}
+	RespondWithJSON(w, 201, map[string]interface{}{"message": "report created", "report": report})
+}
+
+
 //el state es el receiver, (el objeto que está ejecutando el método)
 //cuando handlers() escribe s.register, ese s es el mismo que le llegó a handlers(),  necesita recibir la instancia de alguna manera 
 func (s *state) handlers() {
@@ -1479,6 +1631,11 @@ func (s *state) handlers() {
 	http.Handle("GET /stories", s.authMiddleware(http.HandlerFunc(s.getActiveStories)))
 	http.Handle("POST /stories/{storyID}/view", s.authMiddleware(http.HandlerFunc(s.viewStory)))
 	http.Handle("DELETE /stories/{storyID}", s.authMiddleware(http.HandlerFunc(s.deleteStory)))
+
+	http.Handle("POST /me/block/{userID}", s.authMiddleware(http.HandlerFunc(s.blockUser)))
+	http.Handle("DELETE /me/unblock/{userID}", s.authMiddleware(http.HandlerFunc(s.unblockUser)))
+	http.Handle("GET /me/blocked", s.authMiddleware(http.HandlerFunc(s.getBlockedUsers)))
+	http.Handle("POST /me/report/{userID}", s.authMiddleware(http.HandlerFunc(s.reportUser)))
 }
 
 

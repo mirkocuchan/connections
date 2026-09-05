@@ -88,3 +88,20 @@ func revealOrHiddenDOB(visible sql.NullBool, value time.Time) string {
     }
     return "not revealed yet..."
 }
+
+//funcion para saber si hay algun bloqueo entre dos usuarios. devuelve true si hay un bloqueo, false si no lo hay
+func (s *state) isBlocked(ctx context.Context, userID1, userID2 uuid.UUID) (bool, error){
+    existsBlockBetweenUsersParams := database.ExistsBlockBetweenUsersParams{
+        BlockerID: userID1,
+        BlockedID: userID2,
+    }
+    _, err := s.db.ExistsBlockBetweenUsers(ctx, existsBlockBetweenUsersParams)
+    if err == sql.ErrNoRows {
+        return false, nil // no hay bloqueo y no es un error
+    }
+    if err != nil {
+        return false, err
+    }
+
+    return true, nil
+}

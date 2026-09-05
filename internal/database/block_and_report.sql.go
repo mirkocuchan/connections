@@ -8,17 +8,15 @@ package database
 import (
 	"context"
 	"database/sql"
-	"time"
 
 	"github.com/google/uuid"
 )
 
 const createBlock = `-- name: CreateBlock :one
-INSERT INTO blocks (blocker_id, blocked_id, created_at)
+INSERT INTO blocks (blocker_id, blocked_id)
 VALUES (
     $1,
-    $2,
-    $3
+    $2
 )
 RETURNING blocker_id, blocked_id, created_at
 `
@@ -26,11 +24,10 @@ RETURNING blocker_id, blocked_id, created_at
 type CreateBlockParams struct {
 	BlockerID uuid.UUID
 	BlockedID uuid.UUID
-	CreatedAt time.Time
 }
 
 func (q *Queries) CreateBlock(ctx context.Context, arg CreateBlockParams) (Block, error) {
-	row := q.db.QueryRowContext(ctx, createBlock, arg.BlockerID, arg.BlockedID, arg.CreatedAt)
+	row := q.db.QueryRowContext(ctx, createBlock, arg.BlockerID, arg.BlockedID)
 	var i Block
 	err := row.Scan(&i.BlockerID, &i.BlockedID, &i.CreatedAt)
 	return i, err
@@ -87,6 +84,22 @@ func (q *Queries) DeleteBlockByBlockerAndBlockedID(ctx context.Context, arg Dele
 	return err
 }
 
+const existsBlockBetweenUsers = `-- name: ExistsBlockBetweenUsers :one
+SELECT 1 FROM blocks WHERE (blocker_id = $1 AND blocked_id = $2) OR (blocker_id = $2 AND blocked_id = $1) LIMIT 1
+`
+
+type ExistsBlockBetweenUsersParams struct {
+	BlockerID uuid.UUID
+	BlockedID uuid.UUID
+}
+
+func (q *Queries) ExistsBlockBetweenUsers(ctx context.Context, arg ExistsBlockBetweenUsersParams) (int32, error) {
+	row := q.db.QueryRowContext(ctx, existsBlockBetweenUsers, arg.BlockerID, arg.BlockedID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const getBlocksByBlockerID = `-- name: GetBlocksByBlockerID :many
 SELECT blocker_id, blocked_id, created_at FROM blocks WHERE blocker_id = $1
 `
@@ -112,20 +125,4 @@ func (q *Queries) GetBlocksByBlockerID(ctx context.Context, blockerID uuid.UUID)
 		return nil, err
 	}
 	return items, nil
-}
-
-const existsBlockByBlockerAndBlockedID = `-- name: existsBlockByBlockerAndBlockedID :one
-SELECT blocker_id, blocked_id, created_at FROM blocks WHERE (blocker_id = $1 AND blocked_id = $2) OR (blocker_id = $2 AND blocked_id = $1)
-`
-
-type existsBlockByBlockerAndBlockedIDParams struct {
-	BlockerID uuid.UUID
-	BlockedID uuid.UUID
-}
-
-func (q *Queries) existsBlockByBlockerAndBlockedID(ctx context.Context, arg existsBlockByBlockerAndBlockedIDParams) (Block, error) {
-	row := q.db.QueryRowContext(ctx, existsBlockByBlockerAndBlockedID, arg.BlockerID, arg.BlockedID)
-	var i Block
-	err := row.Scan(&i.BlockerID, &i.BlockedID, &i.CreatedAt)
-	return i, err
 }
