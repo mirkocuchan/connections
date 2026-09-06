@@ -1542,12 +1542,12 @@ func (s *state) getBlockedUsers(w http.ResponseWriter, r *http.Request){
 
 type reportRequest struct {
 	Reason     string         `json:"reason"`
-	Details    sql.NullString `json:"details"`
+	Details    string 		  `json:"details"`
 }
 func (s *state) reportUser(w http.ResponseWriter, r *http.Request){
 	defer r.Body.Close()
 
-	reportData, err := io.ReadAll(r.Body)
+	reportData, err := io.ReadAll(r.Body)	
 	if err != nil{
 		RespondWithError(w, 400, "couldn't read the request body")
 		return
@@ -1559,7 +1559,18 @@ func (s *state) reportUser(w http.ResponseWriter, r *http.Request){
 		return
     }
 	//getting the content of the report that is being generated
-	
+	switch body.Reason {
+	case "spam", "acoso", "contenido_inapropiado":
+		// válido, details es opcional
+	case "otro":
+		if body.Details == "" {
+			RespondWithError(w, 400, "details are required when reason is 'otro'")
+			return
+		}
+	default:
+		RespondWithError(w, 400, "invalid report reason")
+		return
+	}
 	//userID is the one reporting another user
 	userID, err := s.getUserIDFromContext(r)
 	if err != nil{
@@ -1573,7 +1584,6 @@ func (s *state) reportUser(w http.ResponseWriter, r *http.Request){
 		RespondWithError(w, 404, "Invalid user ID")
 		return
 	}
-
 	createReportParams := database.CreateReportParams{
 		ReporterID: userID,
 		ReportedID: reportedUserID,
