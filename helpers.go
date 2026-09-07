@@ -8,6 +8,8 @@ import(
     "strings"
     "database/sql"
     "fmt"
+    "context"
+    "github.com/mirkocuchan/connections/internal/database"
 )
 //net/http exige que un handler tenga la firma (ResponseWriter, *Request). lo hacemos a register un método de state para tener acceso a db y cfg desde adentro sin recibirlos como parámetro,
 //porque no permite tener state de parametro al ser un handler

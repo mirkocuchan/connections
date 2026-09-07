@@ -1226,9 +1226,8 @@ func (s *state) uploadPhoto(w http.ResponseWriter, r *http.Request){
 		PhotoUrl string   `json:"photo_url"`
 		Position int32    `json:"position"`
 		CreatedAt time.Time `json:"created_at"`
-		UpdatedAt time.Time `json:"updated_at"`
 	}
-	RespondWithJSON(w, 201, responsePhoto{PhotoID: userPhoto.PhotoID, UserID: userPhoto.UserID, PhotoUrl: userPhoto.PhotoUrl, Position: userPhoto.Position, CreatedAt: userPhoto.CreatedAt, UpdatedAt: userPhoto.UpdatedAt})
+	RespondWithJSON(w, 201, responsePhoto{PhotoID: userPhoto.PhotoID, UserID: userPhoto.UserID, PhotoUrl: userPhoto.PhotoUrl, Position: userPhoto.Position, CreatedAt: userPhoto.CreatedAt})
 }
 
 func (s *state) getPhotos(w http.ResponseWriter, r *http.Request){
@@ -1243,7 +1242,24 @@ func (s *state) getPhotos(w http.ResponseWriter, r *http.Request){
 		RespondWithError(w, 404, "photos don't exist in the database")
 		return
 	}
-	RespondWithJSON(w, 200, photos)
+	type photoResponse struct {
+		PhotoID   uuid.UUID `json:"photo_id"`
+		UserID    uuid.UUID `json:"user_id"`
+		PhotoURL  string    `json:"photo_url"`
+		Position  int32     `json:"position"`
+		CreatedAt time.Time `json:"created_at"`
+	}
+	photosResponse := []photoResponse{}
+	for _, photo := range photos {
+		photosResponse = append(photosResponse, photoResponse{
+			PhotoID:   photo.PhotoID,
+			UserID:    photo.UserID,
+			PhotoURL:  photo.PhotoUrl,
+			Position:  photo.Position,
+			CreatedAt: photo.CreatedAt,
+		})
+	}
+	RespondWithJSON(w, 200, photosResponse)
 }
 
 func (s *state) deletePhoto(w http.ResponseWriter, r *http.Request){
@@ -1537,12 +1553,29 @@ func (s *state) getBlockedUsers(w http.ResponseWriter, r *http.Request){
 		RespondWithError(w, 500, "couldn't get blocked users")
 		return
 	}
-	RespondWithJSON(w, 200, blockedUsers)
+	type blockResponse struct {
+		BlockerID uuid.UUID `json:"blocker_id"`
+		BlockedID uuid.UUID `json:"blocked_id"`
+		CreatedAt time.Time `json:"created_at"`
+	}
+	blockedResponse := []blockResponse{}
+	for _, b := range blockedUsers {
+		blockedResponse = append(blockedResponse, blockResponse{
+			BlockerID: b.BlockerID,
+			BlockedID: b.BlockedID,
+			CreatedAt: b.CreatedAt,
+		})
+	}
+	RespondWithJSON(w, 200, blockedResponse)
 }
 
 type reportRequest struct {
 	Reason     string         `json:"reason"`
+<<<<<<< HEAD
 	Details    string 		  `json:"details"`
+=======
+	Details    string `json:"details"`
+>>>>>>> d16d79c (fixing little steps, back structure done)
 }
 func (s *state) reportUser(w http.ResponseWriter, r *http.Request){
 	defer r.Body.Close()
@@ -1595,7 +1628,24 @@ func (s *state) reportUser(w http.ResponseWriter, r *http.Request){
 		RespondWithError(w, 500, "couldn't create report")
 		return
 	}
-	RespondWithJSON(w, 201, map[string]interface{}{"message": "report created", "report": report})
+	type reportResponse struct {
+		ReportID   uuid.UUID `json:"report_id"`
+		ReporterID uuid.UUID `json:"reporter_id"`
+		ReportedID uuid.UUID `json:"reported_id"`
+		Reason     string    `json:"reason"`
+		Details    string    `json:"details"`
+		CreatedAt  time.Time `json:"created_at"`
+	}
+
+	// al final de reportUser, reemplazando el RespondWithJSON actual:
+	RespondWithJSON(w, 201, reportResponse{
+		ReportID:   report.ReportID,
+		ReporterID: report.ReporterID,
+		ReportedID: report.ReportedID,
+		Reason:     report.Reason,
+		Details:    report.Details.String,
+		CreatedAt:  report.CreatedAt,
+	})
 }
 
 
