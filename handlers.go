@@ -1571,11 +1571,7 @@ func (s *state) getBlockedUsers(w http.ResponseWriter, r *http.Request){
 
 type reportRequest struct {
 	Reason     string         `json:"reason"`
-<<<<<<< HEAD
 	Details    string 		  `json:"details"`
-=======
-	Details    string `json:"details"`
->>>>>>> d16d79c (fixing little steps, back structure done)
 }
 func (s *state) reportUser(w http.ResponseWriter, r *http.Request){
 	defer r.Body.Close()
