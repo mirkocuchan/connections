@@ -634,6 +634,7 @@ func (s *state) getUserCard(w http.ResponseWriter, r *http.Request){
 	type responseCard struct {
 		CardID             uuid.UUID `json:"card_id"`
 		ChatID             uuid.UUID `json:"chat_id"`
+		UserOneID          uuid.UUID `json:"user_one_id"`
 		CreatorID          uuid.UUID `json:"creator_id"`
 		SubjectID          uuid.UUID `json:"subject_id"`
 		Nickname           sql.NullString `json:"nickname"`
@@ -670,7 +671,8 @@ func (s *state) getUserCard(w http.ResponseWriter, r *http.Request){
 			return
 		}
 			
-		RespondWithJSON(w, 200, responseCard{CardID: newCard.CardID, ChatID: chat.ChatID, CreatorID: newCard.CreatorID, SubjectID: newCard.SubjectID, Nickname: newCard.Nickname,
+		RespondWithJSON(w, 200, responseCard{CardID: newCard.CardID, ChatID: chat.ChatID, 
+		UserOneID: chat.UserOneID, CreatorID: newCard.CreatorID, SubjectID: newCard.SubjectID, Nickname: newCard.Nickname,
 		NotesOnSubject: newCard.NotesOnSubject, DisplayNameVisible: newCard.DisplayNameVisible, DateOfBirthVisible: newCard.DateOfBirthVisible, 
 		CityVisible: newCard.CityVisible, CountryVisible: newCard.CountryVisible, PhotosVisible: newCard.PhotosVisible, BioVisible: newCard.BioVisible, HobbiesVisible: newCard.HobbiesVisible, 
 		LanguagesVisible: newCard.LanguagesVisible, DisplayName: "", DateOfBirth: "", City: "", Country: "", Bio: "", Hobbies: "", Languages: ""})
@@ -687,7 +689,7 @@ func (s *state) getUserCard(w http.ResponseWriter, r *http.Request){
 		return
 	}
 	
-	RespondWithJSON(w, 200, responseCard{CardID: card.CardID, ChatID: chat.ChatID, CreatorID: card.CreatorID, SubjectID: card.SubjectID, Nickname: card.Nickname,
+	RespondWithJSON(w, 200, responseCard{CardID: card.CardID, ChatID: chat.ChatID, UserOneID: chat.UserOneID, CreatorID: card.CreatorID, SubjectID: card.SubjectID, Nickname: card.Nickname,
 	NotesOnSubject: card.NotesOnSubject, DisplayNameVisible: getCardWithSubjectData.DisplayNameVisible, DateOfBirthVisible: getCardWithSubjectData.DateOfBirthVisible, 
 	CityVisible: getCardWithSubjectData.CityVisible, CountryVisible: getCardWithSubjectData.CountryVisible, PhotosVisible: getCardWithSubjectData.PhotosVisible, BioVisible: getCardWithSubjectData.BioVisible, HobbiesVisible: getCardWithSubjectData.HobbiesVisible, 
 	LanguagesVisible: getCardWithSubjectData.LanguagesVisible, DisplayName: revealOrHidden(getCardWithSubjectData.DisplayNameVisible, getCardWithSubjectData.DisplayName),
@@ -1180,7 +1182,7 @@ func (s *state) getChats(w http.ResponseWriter, r *http.Request){
     	})
 	}
 
-	RespondWithJSON(w, 200, map[string]string{"message": "chats retrieved", "userID": userID.String()})
+	RespondWithJSON(w, 200, chatsResponse)
 }
 
 type createPhotoStruct struct {
@@ -1644,6 +1646,51 @@ func (s *state) reportUser(w http.ResponseWriter, r *http.Request){
 	})
 }
 
+func (s *state) getPublicProfile(w http.ResponseWriter, r *http.Request) {
+	_, err := s.getUserIDFromContext(r)
+	if err != nil {
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
+
+	userIDString := r.PathValue("userID")
+	userID, err := uuid.Parse(userIDString)
+	if err != nil {
+		RespondWithError(w, 404, "Invalid user ID")
+		return
+	}
+
+	user, err := s.db.GetUserByID(r.Context(), userID)
+	if err != nil {
+		RespondWithError(w, 404, "User not found")
+		return
+	}
+
+	photos, err := s.db.GetUserPhotos(r.Context(), userID)
+	if err != nil {
+		RespondWithError(w, 500, "couldn't get photos")
+		return
+	}
+
+	photoURLs := []string{}
+	for _, photo := range photos {
+		photoURLs = append(photoURLs, photo.PhotoUrl)
+	}
+
+	type responseProfile struct {
+		UserID   uuid.UUID `json:"user_id"`
+		Username string    `json:"username"`
+		Bio      string    `json:"bio"`
+		Photos   []string  `json:"photos"`
+	}
+
+	RespondWithJSON(w, 200, responseProfile{
+		UserID:   user.UserID,
+		Username: user.Username,
+		Bio:      user.Bio.String,
+		Photos:   photoURLs,
+	})
+}
 
 //el state es el receiver, (el objeto que está ejecutando el método)
 //cuando handlers() escribe s.register, ese s es el mismo que le llegó a handlers(),  necesita recibir la instancia de alguna manera 
@@ -1692,6 +1739,8 @@ func (s *state) handlers() {
 	http.Handle("DELETE /me/unblock/{userID}", s.authMiddleware(http.HandlerFunc(s.unblockUser)))
 	http.Handle("GET /me/blocked", s.authMiddleware(http.HandlerFunc(s.getBlockedUsers)))
 	http.Handle("POST /me/report/{userID}", s.authMiddleware(http.HandlerFunc(s.reportUser)))
+
+	http.Handle("GET /users/{userID}/profile", s.authMiddleware(http.HandlerFunc(s.getPublicProfile)))
 }
 
 
