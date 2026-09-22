@@ -1132,7 +1132,6 @@ func (s *state) resetCard(w http.ResponseWriter, r *http.Request){
 }
 
 func (s *state) getChats(w http.ResponseWriter, r *http.Request){
-	//userID's chats
 	userID, err := s.getUserIDFromContext(r)
 	if err != nil{
 		RespondWithError(w, 401, "Unauthorized")
@@ -1146,12 +1145,15 @@ func (s *state) getChats(w http.ResponseWriter, r *http.Request){
 	}
 
 	type chatResponse struct {
-		ChatID    uuid.UUID `json:"chat_id"`
-		UserOneID uuid.UUID `json:"creator_id"`
-		UserTwoID uuid.UUID    `json:"subject_id"`
-		Nickname string `json:"nickname"`
-		CreatedAt time.Time `json:"created_at"`
-		UpdatedAt time.Time `json:"updated_at"`
+		ChatID       uuid.UUID `json:"chat_id"`
+		UserOneID    uuid.UUID `json:"creator_id"`
+		UserTwoID    uuid.UUID `json:"subject_id"`
+		OtherUserID  uuid.UUID `json:"other_user_id"`
+		Nickname     string    `json:"nickname"`
+		LastMessage  string    `json:"last_message"`
+		PhotoURL     string    `json:"photo_url"`
+		CreatedAt    time.Time `json:"created_at"`
+		UpdatedAt    time.Time `json:"updated_at"`
 	}
 	chatsResponse := []chatResponse{}
 	for _, chat := range chats{
@@ -1168,18 +1170,34 @@ func (s *state) getChats(w http.ResponseWriter, r *http.Request){
 			SubjectID: otherUserID,
 		}
 		card, err := s.db.GetCardWithChatCreatorAndSubject(r.Context(), cardParams)
-		displayName := "anon-" + otherUserID.String()[:8]  // placeholder por default
+		displayName := "anon-" + otherUserID.String()[:8]
 		if err == nil && card.Nickname.Valid {
 			displayName = card.Nickname.String
 		}
+
+		lastMessage, err := s.db.GetLastMessageByChatID(r.Context(), chat.ChatID)
+		lastMessageContent := ""
+		if err == nil {
+			lastMessageContent = lastMessage.Content
+		}
+
+		photo, err := s.db.GetPrimaryUserPhoto(r.Context(), otherUserID)
+		photoURL := ""
+		if err == nil {
+			photoURL = photo.PhotoUrl
+		}
+
 		chatsResponse = append(chatsResponse, chatResponse{
-        ChatID:    chat.ChatID,
-        UserOneID: chat.UserOneID,
-        UserTwoID: chat.UserTwoID,
-        Nickname:  displayName,
-        CreatedAt: chat.CreatedAt,
-        UpdatedAt: chat.UpdatedAt,
-    	})
+			ChatID:      chat.ChatID,
+			UserOneID:   chat.UserOneID,
+			UserTwoID:   chat.UserTwoID,
+			OtherUserID: otherUserID,
+			Nickname:    displayName,
+			LastMessage: lastMessageContent,
+			PhotoURL:    photoURL,
+			CreatedAt:   chat.CreatedAt,
+			UpdatedAt:   chat.UpdatedAt,
+		})
 	}
 
 	RespondWithJSON(w, 200, chatsResponse)

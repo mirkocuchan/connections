@@ -50,6 +50,24 @@ func (q *Queries) DeleteMessageByID(ctx context.Context, messageID uuid.UUID) er
 	return err
 }
 
+const getLastMessageByChatID = `-- name: GetLastMessageByChatID :one
+SELECT message_id, chat_id, sender_id, content, created_at, updated_at FROM messages WHERE chat_id = $1 ORDER BY created_at DESC LIMIT 1
+`
+
+func (q *Queries) GetLastMessageByChatID(ctx context.Context, chatID uuid.UUID) (Message, error) {
+	row := q.db.QueryRowContext(ctx, getLastMessageByChatID, chatID)
+	var i Message
+	err := row.Scan(
+		&i.MessageID,
+		&i.ChatID,
+		&i.SenderID,
+		&i.Content,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getMessageByID = `-- name: GetMessageByID :one
 SELECT message_id, chat_id, sender_id, content, created_at, updated_at FROM messages WHERE message_id = $1
 `

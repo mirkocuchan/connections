@@ -18,3 +18,6 @@ DELETE FROM messages WHERE message_id = $1;
 
 -- name: GetMessagesBySenderID :many
 SELECT * FROM messages WHERE sender_id = $1 ORDER BY created_at ASC;
+
+-- name: GetLastMessageByChatID :one
+SELECT * FROM messages WHERE chat_id = $1 ORDER BY created_at DESC LIMIT 1;
