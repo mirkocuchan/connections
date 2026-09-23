@@ -1170,9 +1170,15 @@ func (s *state) getChats(w http.ResponseWriter, r *http.Request){
 			SubjectID: otherUserID,
 		}
 		card, err := s.db.GetCardWithChatCreatorAndSubject(r.Context(), cardParams)
+
 		displayName := "anon-" + otherUserID.String()[:8]
-		if err == nil && card.Nickname.Valid {
+		if err == nil && card.Nickname.Valid && card.Nickname.String != "" {
 			displayName = card.Nickname.String
+		} else if chat.UserOneID == userID {
+			otherUser, err := s.db.GetUserByID(r.Context(), otherUserID)
+			if err == nil {
+				displayName = otherUser.Username
+			}
 		}
 
 		lastMessage, err := s.db.GetLastMessageByChatID(r.Context(), chat.ChatID)
