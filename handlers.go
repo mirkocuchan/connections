@@ -1426,6 +1426,7 @@ func (s *state) getActiveStories(w http.ResponseWriter, r *http.Request){
 	type storyResponse struct {
 		StoryID   uuid.UUID `json:"story_id"`
 		UserID    uuid.UUID `json:"user_id"`
+		Username  string     `json:"username"`
 		MediaUrl  string    `json:"media_url"`
 		MediaType string    `json:"media_type"`
 		CreatedAt time.Time `json:"created_at"`
@@ -1439,9 +1440,16 @@ func (s *state) getActiveStories(w http.ResponseWriter, r *http.Request){
 			viewedAt = &story.ViewedAt.Time
 		}
 
+		author, err := s.db.GetUserByID(r.Context(), story.UserID)
+		username := "usuario"
+		if err == nil {
+			username = author.Username
+		}
+
 		storiesResponse = append(storiesResponse, storyResponse{
 			StoryID:   story.StoryID,
 			UserID:    story.UserID,
+			Username:  username,
 			MediaUrl:  story.MediaUrl,
 			MediaType: story.MediaType,
 			CreatedAt: story.CreatedAt,
