@@ -14,6 +14,7 @@ type Config struct {
 	JWTSecret string
 	AccessTokenDuration time.Duration
 	RefreshTokenDuration time.Duration
+	BaseURL string
 }
 
 func GetConfig() (Config, error){
@@ -38,6 +39,10 @@ func GetConfig() (Config, error){
 	if jwtSecret == "" {
 		return Config{}, errors.New("JWT_SECRET environment variable is not set")
 	}
+	baseURL := os.Getenv("BASE_URL")
+	if baseURL == "" {
+		return Config{}, errors.New("BASE_URL environment variable is not set")
+	}
 	accessTokenDuration, accessErr := time.ParseDuration(os.Getenv("ACCESS_TOKEN_DURATION"))
 	refreshTokenDuration, refreshErr := time.ParseDuration(os.Getenv("REFRESH_TOKEN_DURATION"))
 	if accessErr != nil{
@@ -53,6 +58,7 @@ func GetConfig() (Config, error){
 		JWTSecret: jwtSecret,
 		AccessTokenDuration: accessTokenDuration,
 		RefreshTokenDuration: refreshTokenDuration,
+		BaseURL: baseURL,
 	}
 	return config, nil
 }

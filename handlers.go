@@ -10,6 +10,7 @@ import(
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"database/sql"
+	"os"
 )
 
 type receivedUser struct {
@@ -1724,6 +1725,41 @@ func (s *state) getPublicProfile(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *state) uploadFile(w http.ResponseWriter, r *http.Request) {
+	userID, err := s.getUserIDFromContext(r)
+	if err != nil {
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
+	err = r.ParseMultipartForm(10 << 20) // 10 MB máximo para el contenido
+	if err != nil {
+		RespondWithError(w, 400, "couldn't parse the uploaded file")
+		return
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		RespondWithError(w, 400, "no file provided")
+		return
+	}
+	defer file.Close()
+
+	filename := userID.String() + "-" + header.Filename
+	dst, err := os.Create("./uploads/" + filename)
+	if err != nil {
+		RespondWithError(w, 500, "couldn't save the file")
+		return
+	}
+	defer dst.Close()
+	_, err = io.Copy(dst, file)
+	if err != nil {
+		RespondWithError(w, 500, "couldn't save the file")
+		return
+	}
+
+	fileURL := s.cfg.BaseURL + "/uploads/" + filename
+	RespondWithJSON(w, 200, map[string]string{"url": fileURL})
+}
+
 //el state es el receiver, (el objeto que está ejecutando el método)
 //cuando handlers() escribe s.register, ese s es el mismo que le llegó a handlers(),  necesita recibir la instancia de alguna manera 
 func (s *state) handlers() {
@@ -1773,6 +1809,9 @@ func (s *state) handlers() {
 	http.Handle("POST /me/report/{userID}", s.authMiddleware(http.HandlerFunc(s.reportUser)))
 
 	http.Handle("GET /users/{userID}/profile", s.authMiddleware(http.HandlerFunc(s.getPublicProfile)))
+
+	http.Handle("POST /upload", s.authMiddleware(http.HandlerFunc(s.uploadFile)))
+	http.Handle("/uploads/", http.StripPrefix("/uploads/", http.FileServer(http.Dir("./uploads"))))
 }
 
 
