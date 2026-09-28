@@ -1313,6 +1313,15 @@ func (s *state) deletePhoto(w http.ResponseWriter, r *http.Request){
 		RespondWithError(w, 404, "Photo not found")
 		return
 	}
+	count, err := s.db.CountUserPhotos(r.Context(), userID)
+	if err != nil {
+		RespondWithError(w, 500, "couldn't check photos")
+		return
+	}
+	if count <= 1 {
+		RespondWithError(w, 400, "you must keep at least one photo")
+		return
+	}
 	deleteParams := database.DeleteUserPhotoParams{
 		PhotoID: userPhoto.PhotoID,
 		UserID:  userID,
@@ -1591,13 +1600,20 @@ func (s *state) getBlockedUsers(w http.ResponseWriter, r *http.Request){
 	type blockResponse struct {
 		BlockerID uuid.UUID `json:"blocker_id"`
 		BlockedID uuid.UUID `json:"blocked_id"`
+		Username  string    `json:"username"`
 		CreatedAt time.Time `json:"created_at"`
 	}
 	blockedResponse := []blockResponse{}
 	for _, b := range blockedUsers {
+		username := "usuario"
+		blockedUser, err := s.db.GetUserByID(r.Context(), b.BlockedID)
+		if err == nil {
+			username = blockedUser.Username
+		}
 		blockedResponse = append(blockedResponse, blockResponse{
 			BlockerID: b.BlockerID,
 			BlockedID: b.BlockedID,
+			Username:  username,
 			CreatedAt: b.CreatedAt,
 		})
 	}
@@ -1760,6 +1776,99 @@ func (s *state) uploadFile(w http.ResponseWriter, r *http.Request) {
 	RespondWithJSON(w, 200, map[string]string{"url": fileURL})
 }
 
+type reorderPhotosRequest struct {
+	PhotoIDs []uuid.UUID `json:"photo_ids"`
+}
+
+func (s *state) reorderPhotos(w http.ResponseWriter, r *http.Request) {
+	userID, err := s.getUserIDFromContext(r)
+	if err != nil {
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
+	var body reorderPhotosRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		RespondWithError(w, 400, "invalid request body")
+		return
+	}
+	photos, err := s.db.GetUserPhotos(r.Context(), userID)
+	if err != nil {
+		RespondWithError(w, 500, "couldn't get photos")
+		return
+	}
+	// la lista tiene que ser exactamente el conjunto de fotos del usuario
+	owned := map[uuid.UUID]bool{}
+	for _, p := range photos {
+		owned[p.PhotoID] = true
+	}
+	if len(body.PhotoIDs) != len(photos) {
+		RespondWithError(w, 400, "the list must include all of your photos")
+		return
+	}
+	seen := map[uuid.UUID]bool{}
+	for _, id := range body.PhotoIDs {
+		if !owned[id] || seen[id] {
+			RespondWithError(w, 400, "invalid photo list")
+			return
+		}
+		seen[id] = true
+	}
+	for i, id := range body.PhotoIDs {
+		err := s.db.UpdatePhotoPosition(r.Context(), database.UpdatePhotoPositionParams{
+			Position: int32(i),
+			PhotoID:  id,
+			UserID:   userID,
+		})
+		if err != nil {
+			RespondWithError(w, 500, "couldn't update photo order")
+			return
+		}
+	}
+	RespondWithJSON(w, 200, map[string]string{"message": "photos reordered"})
+}
+
+func (s *state) getStoryViewers(w http.ResponseWriter, r *http.Request) {
+	userID, err := s.getUserIDFromContext(r)
+	if err != nil {
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
+	storyIDString := r.PathValue("storyID")
+	storyID, err := uuid.Parse(storyIDString)
+	if err != nil {
+		RespondWithError(w, 404, "Invalid story ID")
+		return
+	}
+	story, err := s.db.GetStoryByID(r.Context(), storyID)
+	if err != nil {
+		RespondWithError(w, 404, "Story not found")
+		return
+	}
+	if story.UserID != userID {
+		RespondWithError(w, 403, "you can only see viewers of your own stories")
+		return
+	}
+	viewers, err := s.db.GetStoryViewers(r.Context(), storyID)
+	if err != nil {
+		RespondWithError(w, 500, "couldn't get the viewers")
+		return
+	}
+	type viewerResponse struct {
+		ViewerID uuid.UUID `json:"viewer_id"`
+		Username string    `json:"username"`
+		ViewedAt time.Time `json:"viewed_at"`
+	}
+	viewersResponse := []viewerResponse{}
+	for _, v := range viewers {
+		viewersResponse = append(viewersResponse, viewerResponse{
+			ViewerID: v.ViewerID,
+			Username: v.Username,
+			ViewedAt: v.ViewedAt,
+		})
+	}
+	RespondWithJSON(w, 200, viewersResponse)
+}
+
 //el state es el receiver, (el objeto que está ejecutando el método)
 //cuando handlers() escribe s.register, ese s es el mismo que le llegó a handlers(),  necesita recibir la instancia de alguna manera 
 func (s *state) handlers() {
@@ -1802,6 +1911,7 @@ func (s *state) handlers() {
 	http.Handle("GET /stories", s.authMiddleware(http.HandlerFunc(s.getActiveStories)))
 	http.Handle("POST /stories/{storyID}/view", s.authMiddleware(http.HandlerFunc(s.viewStory)))
 	http.Handle("DELETE /stories/{storyID}", s.authMiddleware(http.HandlerFunc(s.deleteStory)))
+	http.Handle("GET /stories/{storyID}/viewers", s.authMiddleware(http.HandlerFunc(s.getStoryViewers)))
 
 	http.Handle("POST /me/block/{userID}", s.authMiddleware(http.HandlerFunc(s.blockUser)))
 	http.Handle("DELETE /me/unblock/{userID}", s.authMiddleware(http.HandlerFunc(s.unblockUser)))
@@ -1812,6 +1922,7 @@ func (s *state) handlers() {
 
 	http.Handle("POST /upload", s.authMiddleware(http.HandlerFunc(s.uploadFile)))
 	http.Handle("/uploads/", http.StripPrefix("/uploads/", http.FileServer(http.Dir("./uploads"))))
+	http.Handle("PATCH /me/photos/order", s.authMiddleware(http.HandlerFunc(s.reorderPhotos)))
 }
 
 

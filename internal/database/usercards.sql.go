@@ -13,6 +13,17 @@ import (
 	"github.com/google/uuid"
 )
 
+const countUserPhotos = `-- name: CountUserPhotos :one
+SELECT COUNT(*) FROM user_photos WHERE user_id = $1
+`
+
+func (q *Queries) CountUserPhotos(ctx context.Context, userID uuid.UUID) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countUserPhotos, userID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createUserCard = `-- name: CreateUserCard :one
 INSERT INTO cards (chat_id, creator_id, subject_id)
 VALUES (
@@ -581,4 +592,19 @@ func (q *Queries) UpdateNotesOnSubject(ctx context.Context, arg UpdateNotesOnSub
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const updatePhotoPosition = `-- name: UpdatePhotoPosition :exec
+UPDATE user_photos SET position = $1 WHERE photo_id = $2 AND user_id = $3
+`
+
+type UpdatePhotoPositionParams struct {
+	Position int32
+	PhotoID  uuid.UUID
+	UserID   uuid.UUID
+}
+
+func (q *Queries) UpdatePhotoPosition(ctx context.Context, arg UpdatePhotoPositionParams) error {
+	_, err := q.db.ExecContext(ctx, updatePhotoPosition, arg.Position, arg.PhotoID, arg.UserID)
+	return err
 }

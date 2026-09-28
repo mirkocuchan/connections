@@ -168,6 +168,39 @@ func (q *Queries) GetStoryByID(ctx context.Context, storyID uuid.UUID) (Story, e
 	return i, err
 }
 
+const getStoryViewers = `-- name: GetStoryViewers :many
+SELECT sv.viewer_id, u.username, sv.viewed_at FROM story_views sv JOIN users u ON u.user_id = sv.viewer_id WHERE sv.story_id = $1 ORDER BY sv.viewed_at DESC
+`
+
+type GetStoryViewersRow struct {
+	ViewerID uuid.UUID
+	Username string
+	ViewedAt time.Time
+}
+
+func (q *Queries) GetStoryViewers(ctx context.Context, storyID uuid.UUID) ([]GetStoryViewersRow, error) {
+	rows, err := q.db.QueryContext(ctx, getStoryViewers, storyID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetStoryViewersRow
+	for rows.Next() {
+		var i GetStoryViewersRow
+		if err := rows.Scan(&i.ViewerID, &i.Username, &i.ViewedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getStoryViewsByUserID = `-- name: GetStoryViewsByUserID :many
 SELECT stories.story_id, stories.user_id, stories.media_url, stories.media_type, stories.created_at, stories.expires_at, story_views.viewed_at FROM stories LEFT JOIN story_views ON stories.story_id = story_views.story_id AND story_views.viewer_id = $1 
 WHERE stories.expires_at > NOW() ORDER BY stories.created_at DESC

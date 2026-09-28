@@ -121,3 +121,9 @@ ORDER BY RANDOM() LIMIT 30;
 
 -- name: GetPrimaryUserPhoto :one
 SELECT * FROM user_photos WHERE user_id = $1 ORDER BY position LIMIT 1;
+
+-- name: CountUserPhotos :one
+SELECT COUNT(*) FROM user_photos WHERE user_id = $1;
+
+-- name: UpdatePhotoPosition :exec
+UPDATE user_photos SET position = $1 WHERE photo_id = $2 AND user_id = $3;

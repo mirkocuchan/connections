@@ -30,3 +30,6 @@ WHERE stories.expires_at > NOW() ORDER BY stories.created_at DESC;
 
 -- name: DidUserViewStory :one
 SELECT * FROM story_views WHERE story_id = $1 AND viewer_id = $2;
+
+-- name: GetStoryViewers :many
+SELECT sv.viewer_id, u.username, sv.viewed_at FROM story_views sv JOIN users u ON u.user_id = sv.viewer_id WHERE sv.story_id = $1 ORDER BY sv.viewed_at DESC;
