@@ -1860,6 +1860,9 @@ func (s *state) getStoryViewers(w http.ResponseWriter, r *http.Request) {
 	}
 	viewersResponse := []viewerResponse{}
 	for _, v := range viewers {
+		if v.ViewerID == userID {
+			continue
+		}
 		viewersResponse = append(viewersResponse, viewerResponse{
 			ViewerID: v.ViewerID,
 			Username: v.Username,
