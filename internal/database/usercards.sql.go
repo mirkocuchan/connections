@@ -228,12 +228,24 @@ func (q *Queries) GetCardWithSubjectData(ctx context.Context, cardID uuid.UUID) 
 }
 
 const getDiscoverableUsers = `-- name: GetDiscoverableUsers :many
-SELECT user_id, username, email, password_hash, date_of_birth, created_at, updated_at, display_name, bio, city, country, hobbies, languages FROM users WHERE user_id <> $1 AND user_id NOT IN (SELECT user_one_id FROM chats WHERE user_two_id = $1 UNION SELECT user_two_id FROM chats WHERE user_one_id = $1) 
+SELECT u.user_id, u.username, u.email, u.password_hash, u.date_of_birth, u.created_at, u.updated_at, u.display_name, u.bio, u.city, u.country, u.hobbies, u.languages, u.detected_country, u.global_discovery FROM users u 
+WHERE u.user_id <> $1 
+AND u.user_id NOT IN (
+    SELECT user_one_id FROM chats WHERE user_two_id = $1 
+    UNION 
+    SELECT user_two_id FROM chats WHERE user_one_id = $1
+) 
+AND ($2::boolean = true OR u.detected_country = (SELECT detected_country FROM users WHERE user_id = $1))
 ORDER BY RANDOM() LIMIT 30
 `
 
-func (q *Queries) GetDiscoverableUsers(ctx context.Context, userID uuid.UUID) ([]User, error) {
-	rows, err := q.db.QueryContext(ctx, getDiscoverableUsers, userID)
+type GetDiscoverableUsersParams struct {
+	UserID          uuid.UUID
+	GlobalDiscovery bool
+}
+
+func (q *Queries) GetDiscoverableUsers(ctx context.Context, arg GetDiscoverableUsersParams) ([]User, error) {
+	rows, err := q.db.QueryContext(ctx, getDiscoverableUsers, arg.UserID, arg.GlobalDiscovery)
 	if err != nil {
 		return nil, err
 	}
@@ -255,6 +267,8 @@ func (q *Queries) GetDiscoverableUsers(ctx context.Context, userID uuid.UUID) ([
 			&i.Country,
 			&i.Hobbies,
 			&i.Languages,
+			&i.DetectedCountry,
+			&i.GlobalDiscovery,
 		); err != nil {
 			return nil, err
 		}
@@ -270,9 +284,11 @@ func (q *Queries) GetDiscoverableUsers(ctx context.Context, userID uuid.UUID) ([
 }
 
 const getPrimaryUserPhoto = `-- name: GetPrimaryUserPhoto :one
+
 SELECT photo_id, user_id, photo_url, position, created_at FROM user_photos WHERE user_id = $1 ORDER BY position LIMIT 1
 `
 
+// tuve que usar un alias para la u porque no le gustaba el anidamiento de users
 func (q *Queries) GetPrimaryUserPhoto(ctx context.Context, userID uuid.UUID) (UserPhoto, error) {
 	row := q.db.QueryRowContext(ctx, getPrimaryUserPhoto, userID)
 	var i UserPhoto
@@ -524,6 +540,54 @@ UPDATE cards SET photos_visible = true WHERE card_id = $1
 func (q *Queries) RevealPhotosField(ctx context.Context, cardID uuid.UUID) error {
 	_, err := q.db.ExecContext(ctx, revealPhotosField, cardID)
 	return err
+}
+
+const searchUsersByUsername = `-- name: SearchUsersByUsername :many
+SELECT user_id, username, email, password_hash, date_of_birth, created_at, updated_at, display_name, bio, city, country, hobbies, languages, detected_country, global_discovery FROM users WHERE username ILIKE '%' || $1::text || '%' AND user_id <> $2::uuid LIMIT 20
+`
+
+type SearchUsersByUsernameParams struct {
+	Query  string
+	UserID uuid.UUID
+}
+
+func (q *Queries) SearchUsersByUsername(ctx context.Context, arg SearchUsersByUsernameParams) ([]User, error) {
+	rows, err := q.db.QueryContext(ctx, searchUsersByUsername, arg.Query, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []User
+	for rows.Next() {
+		var i User
+		if err := rows.Scan(
+			&i.UserID,
+			&i.Username,
+			&i.Email,
+			&i.PasswordHash,
+			&i.DateOfBirth,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DisplayName,
+			&i.Bio,
+			&i.City,
+			&i.Country,
+			&i.Hobbies,
+			&i.Languages,
+			&i.DetectedCountry,
+			&i.GlobalDiscovery,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const updateNickname = `-- name: UpdateNickname :one

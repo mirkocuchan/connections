@@ -21,7 +21,7 @@ VALUES (
     $3,
     $4
 )
-RETURNING user_id, username, email, password_hash, date_of_birth, created_at, updated_at, display_name, bio, city, country, hobbies, languages
+RETURNING user_id, username, email, password_hash, date_of_birth, created_at, updated_at, display_name, bio, city, country, hobbies, languages, detected_country, global_discovery
 `
 
 type CreateUserParams struct {
@@ -53,12 +53,14 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.Country,
 		&i.Hobbies,
 		&i.Languages,
+		&i.DetectedCountry,
+		&i.GlobalDiscovery,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT user_id, username, email, password_hash, date_of_birth, created_at, updated_at, display_name, bio, city, country, hobbies, languages FROM users WHERE email = $1
+SELECT user_id, username, email, password_hash, date_of_birth, created_at, updated_at, display_name, bio, city, country, hobbies, languages, detected_country, global_discovery FROM users WHERE email = $1
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
@@ -78,12 +80,14 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.Country,
 		&i.Hobbies,
 		&i.Languages,
+		&i.DetectedCountry,
+		&i.GlobalDiscovery,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT user_id, username, email, password_hash, date_of_birth, created_at, updated_at, display_name, bio, city, country, hobbies, languages FROM users WHERE user_id = $1
+SELECT user_id, username, email, password_hash, date_of_birth, created_at, updated_at, display_name, bio, city, country, hobbies, languages, detected_country, global_discovery FROM users WHERE user_id = $1
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, userID uuid.UUID) (User, error) {
@@ -103,8 +107,40 @@ func (q *Queries) GetUserByID(ctx context.Context, userID uuid.UUID) (User, erro
 		&i.Country,
 		&i.Hobbies,
 		&i.Languages,
+		&i.DetectedCountry,
+		&i.GlobalDiscovery,
 	)
 	return i, err
+}
+
+const updateDetectedCountry = `-- name: UpdateDetectedCountry :exec
+
+UPDATE users SET detected_country = $1 WHERE user_id = $2
+`
+
+type UpdateDetectedCountryParams struct {
+	DetectedCountry sql.NullString
+	UserID          uuid.UUID
+}
+
+// si $1 tiene un valor, usalo. Si $1 es NULL, conservá display_name.
+func (q *Queries) UpdateDetectedCountry(ctx context.Context, arg UpdateDetectedCountryParams) error {
+	_, err := q.db.ExecContext(ctx, updateDetectedCountry, arg.DetectedCountry, arg.UserID)
+	return err
+}
+
+const updateGlobalDiscovery = `-- name: UpdateGlobalDiscovery :exec
+UPDATE users SET global_discovery = $1 WHERE user_id = $2
+`
+
+type UpdateGlobalDiscoveryParams struct {
+	GlobalDiscovery bool
+	UserID          uuid.UUID
+}
+
+func (q *Queries) UpdateGlobalDiscovery(ctx context.Context, arg UpdateGlobalDiscoveryParams) error {
+	_, err := q.db.ExecContext(ctx, updateGlobalDiscovery, arg.GlobalDiscovery, arg.UserID)
+	return err
 }
 
 const updateUser = `-- name: UpdateUser :one
@@ -117,7 +153,7 @@ UPDATE users SET
     languages    = COALESCE($6, languages),
     updated_at   = NOW()
 WHERE user_id = $7
-RETURNING user_id, username, email, password_hash, date_of_birth, created_at, updated_at, display_name, bio, city, country, hobbies, languages
+RETURNING user_id, username, email, password_hash, date_of_birth, created_at, updated_at, display_name, bio, city, country, hobbies, languages, detected_country, global_discovery
 `
 
 type UpdateUserParams struct {
@@ -155,6 +191,8 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, e
 		&i.Country,
 		&i.Hobbies,
 		&i.Languages,
+		&i.DetectedCountry,
+		&i.GlobalDiscovery,
 	)
 	return i, err
 }

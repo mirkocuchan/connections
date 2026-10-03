@@ -156,6 +156,15 @@ func (s *state) login(w http.ResponseWriter, r *http.Request){
 		RefreshToken string `json:"refresh_token"`
 	}
 
+	clientIP := getClientIP(r)
+	detectedCountry, err := lookupCountryByIP(clientIP)
+	if err == nil {
+		s.db.UpdateDetectedCountry(r.Context(), database.UpdateDetectedCountryParams{
+			UserID:           user.UserID,
+			DetectedCountry:  sql.NullString{String: detectedCountry, Valid: true},
+		})
+	}
+
 	RespondWithJSON(w, 200, responseUser{ID: user.UserID, Username: user.Username, Email: user.Email,
 	DateOfBirth: Date(user.DateOfBirth), CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt, Token: newJWT,
 	RefreshToken: refreshTokenString})
@@ -1341,17 +1350,24 @@ func (s *state) discoverUsers(w http.ResponseWriter, r *http.Request){
 		RespondWithError(w, 401, "Unauthorized")
 		return
 	}
-
-	discoverableUsers, err := s.db.GetDiscoverableUsers(r.Context(), userID)
+	currentUser, err := s.db.GetUserByID(r.Context(), userID)
+	if err != nil{
+		RespondWithError(w, 500, "couldn't get your profile")
+		return
+	}
+	discoverableUsers, err := s.db.GetDiscoverableUsers(r.Context(), database.GetDiscoverableUsersParams{
+		UserID:          userID,
+		GlobalDiscovery: currentUser.GlobalDiscovery,
+	})
 	if err != nil{
 		RespondWithError(w, 500, "could not discover users")
 		return
 	}
 	
 	type discoverUserResponse struct {
-    	UserID      uuid.UUID `json:"user_id"`
-    	DisplayName string    `json:"display_name"`
-    	PhotoURL    string    `json:"photo_url"`
+		UserID      uuid.UUID `json:"user_id"`
+		DisplayName string    `json:"display_name"`
+		PhotoURL    string    `json:"photo_url"`
 	}
 	usersResponse := []discoverUserResponse{}
 	for _, user := range discoverableUsers {
@@ -1365,7 +1381,7 @@ func (s *state) discoverUsers(w http.ResponseWriter, r *http.Request){
 		}
 		primaryPhoto, err := s.db.GetPrimaryUserPhoto(r.Context(), user.UserID)
 		if err != nil {
-			continue //este usuario no tiene foto, no lo mostramos
+			continue
 		}
 
 		usersResponse = append(usersResponse, discoverUserResponse{
@@ -1374,7 +1390,6 @@ func (s *state) discoverUsers(w http.ResponseWriter, r *http.Request){
 			PhotoURL:    primaryPhoto.PhotoUrl,
 		})
 	}
-
 	RespondWithJSON(w, 200, usersResponse)
 }
 type createStoryStruct struct {
@@ -1872,6 +1887,68 @@ func (s *state) getStoryViewers(w http.ResponseWriter, r *http.Request) {
 	RespondWithJSON(w, 200, viewersResponse)
 }
 
+type updateDiscoveryRequest struct {
+	GlobalDiscovery bool `json:"global_discovery"`
+}
+
+func (s *state) updateGlobalDiscovery(w http.ResponseWriter, r *http.Request) {
+	userID, err := s.getUserIDFromContext(r)
+	if err != nil {
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
+
+	var body updateDiscoveryRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		RespondWithError(w, 400, "invalid request body")
+		return
+	}
+
+	err = s.db.UpdateGlobalDiscovery(r.Context(), database.UpdateGlobalDiscoveryParams{
+		GlobalDiscovery: body.GlobalDiscovery,
+		UserID:          userID,
+	})
+	if err != nil {
+		RespondWithError(w, 500, "couldn't update your preference")
+		return
+	}
+
+	RespondWithJSON(w, 200, map[string]bool{"global_discovery": body.GlobalDiscovery})
+}
+
+func (s *state) searchUsers(w http.ResponseWriter, r *http.Request) {
+	userID, err := s.getUserIDFromContext(r)
+	if err != nil {
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
+	query := r.URL.Query().Get("q")
+	if query == "" {
+		RespondWithError(w, 400, "missing search query")
+		return
+	}
+	users, err := s.db.SearchUsersByUsername(r.Context(), database.SearchUsersByUsernameParams{
+		Query: query,
+		UserID:  userID,
+	})
+	if err != nil {
+		RespondWithError(w, 500, "couldn't search users")
+		return
+	}
+	type searchResult struct {
+		UserID   uuid.UUID `json:"user_id"`
+		Username string    `json:"username"`
+	}
+	results := []searchResult{}
+	for _, u := range users {
+		results = append(results, searchResult{
+			UserID:   u.UserID,
+			Username: u.Username,
+		})
+	}
+	RespondWithJSON(w, 200, results)
+}
+
 //el state es el receiver, (el objeto que está ejecutando el método)
 //cuando handlers() escribe s.register, ese s es el mismo que le llegó a handlers(),  necesita recibir la instancia de alguna manera 
 func (s *state) handlers() {
@@ -1926,6 +2003,9 @@ func (s *state) handlers() {
 	http.Handle("POST /upload", s.authMiddleware(http.HandlerFunc(s.uploadFile)))
 	http.Handle("/uploads/", http.StripPrefix("/uploads/", http.FileServer(http.Dir("./uploads"))))
 	http.Handle("PATCH /me/photos/order", s.authMiddleware(http.HandlerFunc(s.reorderPhotos)))
+
+	http.Handle("PATCH /me/discovery-settings", s.authMiddleware(http.HandlerFunc(s.updateGlobalDiscovery)))
+	http.Handle("GET /users/search", s.authMiddleware(http.HandlerFunc(s.searchUsers)))
 }
 
 

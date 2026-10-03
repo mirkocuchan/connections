@@ -116,8 +116,16 @@ WHERE c.card_id = $1;
 SELECT * FROM cards WHERE chat_id = $1 AND creator_id = $2 AND subject_id = $3;
 
 -- name: GetDiscoverableUsers :many
-SELECT * FROM users WHERE user_id <> $1 AND user_id NOT IN (SELECT user_one_id FROM chats WHERE user_two_id = $1 UNION SELECT user_two_id FROM chats WHERE user_one_id = $1) 
-ORDER BY RANDOM() LIMIT 30;  
+SELECT u.* FROM users u 
+WHERE u.user_id <> $1 
+AND u.user_id NOT IN (
+    SELECT user_one_id FROM chats WHERE user_two_id = $1 
+    UNION 
+    SELECT user_two_id FROM chats WHERE user_one_id = $1
+) 
+AND (sqlc.arg(global_discovery)::boolean = true OR u.detected_country = (SELECT detected_country FROM users WHERE user_id = $1))
+ORDER BY RANDOM() LIMIT 30;
+--tuve que usar un alias para la u porque no le gustaba el anidamiento de users
 
 -- name: GetPrimaryUserPhoto :one
 SELECT * FROM user_photos WHERE user_id = $1 ORDER BY position LIMIT 1;
@@ -127,3 +135,6 @@ SELECT COUNT(*) FROM user_photos WHERE user_id = $1;
 
 -- name: UpdatePhotoPosition :exec
 UPDATE user_photos SET position = $1 WHERE photo_id = $2 AND user_id = $3;
+
+-- name: SearchUsersByUsername :many
+SELECT * FROM users WHERE username ILIKE '%' || sqlc.arg(query)::text || '%' AND user_id <> sqlc.arg(user_id)::uuid LIMIT 20;

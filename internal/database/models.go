@@ -87,19 +87,21 @@ type StoryView struct {
 }
 
 type User struct {
-	UserID       uuid.UUID
-	Username     string
-	Email        string
-	PasswordHash string
-	DateOfBirth  time.Time
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
-	DisplayName  sql.NullString
-	Bio          sql.NullString
-	City         sql.NullString
-	Country      sql.NullString
-	Hobbies      sql.NullString
-	Languages    sql.NullString
+	UserID          uuid.UUID
+	Username        string
+	Email           string
+	PasswordHash    string
+	DateOfBirth     time.Time
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	DisplayName     sql.NullString
+	Bio             sql.NullString
+	City            sql.NullString
+	Country         sql.NullString
+	Hobbies         sql.NullString
+	Languages       sql.NullString
+	DetectedCountry sql.NullString
+	GlobalDiscovery bool
 }
 
 type UserPhoto struct {

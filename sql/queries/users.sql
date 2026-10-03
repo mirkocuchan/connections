@@ -26,3 +26,9 @@ UPDATE users SET
 WHERE user_id = $7
 RETURNING *;
 -- si $1 tiene un valor, usalo. Si $1 es NULL, conservá display_name.
+
+-- name: UpdateDetectedCountry :exec
+UPDATE users SET detected_country = $1 WHERE user_id = $2;
+
+-- name: UpdateGlobalDiscovery :exec
+UPDATE users SET global_discovery = $1 WHERE user_id = $2;

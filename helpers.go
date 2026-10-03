@@ -7,6 +7,8 @@ import(
     "errors"
     "strings"
     "database/sql"
+    "net"
+	"encoding/json"
     "fmt"
     "context"
     "github.com/mirkocuchan/connections/internal/database"
@@ -106,4 +108,36 @@ func (s *state) isBlocked(ctx context.Context, userID1, userID2 uuid.UUID) (bool
     }
 
     return true, nil
+}
+
+func getClientIP(r *http.Request) string {
+	forwarded := r.Header.Get("X-Forwarded-For")
+	if forwarded != "" {
+		return strings.Split(forwarded, ",")[0]
+	}
+	ip, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return ip
+}
+
+func lookupCountryByIP(ip string) (string, error) {
+	resp, err := http.Get("http://ip-api.com/json/" + ip)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Country string `json:"country"`
+		Status  string `json:"status"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", err
+	}
+	if result.Status != "success" {
+		return "", errors.New("couldn't determine country from IP")
+	}
+	return result.Country, nil
 }
