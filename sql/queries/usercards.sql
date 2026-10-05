@@ -116,14 +116,19 @@ WHERE c.card_id = $1;
 SELECT * FROM cards WHERE chat_id = $1 AND creator_id = $2 AND subject_id = $3;
 
 -- name: GetDiscoverableUsers :many
-SELECT u.* FROM users u 
-WHERE u.user_id <> $1 
+SELECT u.* FROM users u
+WHERE u.user_id <> sqlc.arg(user_id)::uuid
 AND u.user_id NOT IN (
-    SELECT user_one_id FROM chats WHERE user_two_id = $1 
-    UNION 
-    SELECT user_two_id FROM chats WHERE user_one_id = $1
-) 
-AND (sqlc.arg(global_discovery)::boolean = true OR u.detected_country = (SELECT detected_country FROM users WHERE user_id = $1))
+    SELECT user_one_id FROM chats WHERE user_two_id = sqlc.arg(user_id)::uuid
+    UNION
+    SELECT user_two_id FROM chats WHERE user_one_id = sqlc.arg(user_id)::uuid
+)
+AND (
+    sqlc.arg(global_discovery)::boolean = true
+    OR u.detected_country IS NULL
+    OR (SELECT me.detected_country FROM users me WHERE me.user_id = sqlc.arg(user_id)::uuid) IS NULL
+    OR u.detected_country = (SELECT me.detected_country FROM users me WHERE me.user_id = sqlc.arg(user_id)::uuid)
+)
 ORDER BY RANDOM() LIMIT 30;
 --tuve que usar un alias para la u porque no le gustaba el anidamiento de users
 
@@ -137,4 +142,14 @@ SELECT COUNT(*) FROM user_photos WHERE user_id = $1;
 UPDATE user_photos SET position = $1 WHERE photo_id = $2 AND user_id = $3;
 
 -- name: SearchUsersByUsername :many
-SELECT * FROM users WHERE username ILIKE '%' || sqlc.arg(query)::text || '%' AND user_id <> sqlc.arg(user_id)::uuid LIMIT 20;
+SELECT u.user_id, u.username, COALESCE(p.photo_url, '')::text AS photo_url
+FROM users u
+LEFT JOIN user_photos p ON p.user_id = u.user_id AND p.position = 0
+WHERE u.username ILIKE '%' || sqlc.arg(query)::text || '%'
+AND u.user_id <> sqlc.arg(user_id)::uuid
+AND u.user_id NOT IN (
+    SELECT user_one_id FROM chats WHERE user_two_id = sqlc.arg(user_id)::uuid
+    UNION
+    SELECT user_two_id FROM chats WHERE user_one_id = sqlc.arg(user_id)::uuid
+)
+LIMIT 20;

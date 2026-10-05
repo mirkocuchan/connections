@@ -123,21 +123,35 @@ func getClientIP(r *http.Request) string {
 }
 
 func lookupCountryByIP(ip string) (string, error) {
-	resp, err := http.Get("http://ip-api.com/json/" + ip)
+    client := http.Client{Timeout: 2 * time.Second}
+    resp, err := client.Get("http://ip-api.com/json/" + ip + "?fields=status,countryCode")
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
 
 	var result struct {
-		Country string `json:"country"`
-		Status  string `json:"status"`
-	}
+        CountryCode string `json:"countryCode"`
+        Status      string `json:"status"`
+    }
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return "", err
 	}
 	if result.Status != "success" {
 		return "", errors.New("couldn't determine country from IP")
 	}
-	return result.Country, nil
+	return result.CountryCode, nil
+}
+
+func normalizeRegionCode(code string) string {
+    code = strings.ToUpper(strings.TrimSpace(code))
+    if len(code) != 2 {
+        return ""
+    }
+    for _, c := range code {
+        if c < 'A' || c > 'Z' {
+            return ""
+        }
+    }
+    return code
 }

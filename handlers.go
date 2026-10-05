@@ -95,6 +95,7 @@ func (s *state) login(w http.ResponseWriter, r *http.Request){
 	type User struct{
 		Email string    `json:"email"`
 		Password string `json:"password"`
+		RegionCode string `json:"region_code"`
 	}
 	decoder := json.NewDecoder(r.Body)
 	params := User{}
@@ -156,12 +157,14 @@ func (s *state) login(w http.ResponseWriter, r *http.Request){
 		RefreshToken string `json:"refresh_token"`
 	}
 
-	clientIP := getClientIP(r)
-	detectedCountry, err := lookupCountryByIP(clientIP)
-	if err == nil {
+	country, err := lookupCountryByIP(getClientIP(r))
+	if err != nil || country == "" {
+		country = normalizeRegionCode(params.RegionCode) // plan B: región del dispositivo
+	}
+	if country != "" { // si fallaron las dos señales, no pisamos lo que ya había
 		s.db.UpdateDetectedCountry(r.Context(), database.UpdateDetectedCountryParams{
-			UserID:           user.UserID,
-			DetectedCountry:  sql.NullString{String: detectedCountry, Valid: true},
+			UserID:          user.UserID,
+			DetectedCountry: sql.NullString{String: country, Valid: true},
 		})
 	}
 
@@ -1938,13 +1941,19 @@ func (s *state) searchUsers(w http.ResponseWriter, r *http.Request) {
 	type searchResult struct {
 		UserID   uuid.UUID `json:"user_id"`
 		Username string    `json:"username"`
+		PhotoURL string    `json:"photo_url"`
 	}
 	results := []searchResult{}
 	for _, u := range users {
-		results = append(results, searchResult{
-			UserID:   u.UserID,
-			Username: u.Username,
-		})
+		blocked, err := s.isBlocked(r.Context(), userID, u.UserID)
+		if err != nil {
+			RespondWithError(w, 500, "couldn't check blocks")
+			return
+		}
+		if blocked {
+			continue
+		}
+		results = append(results, searchResult{UserID: u.UserID, Username: u.Username, PhotoURL: u.PhotoUrl})
 	}
 	RespondWithJSON(w, 200, results)
 }

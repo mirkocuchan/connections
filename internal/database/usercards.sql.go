@@ -228,14 +228,19 @@ func (q *Queries) GetCardWithSubjectData(ctx context.Context, cardID uuid.UUID) 
 }
 
 const getDiscoverableUsers = `-- name: GetDiscoverableUsers :many
-SELECT u.user_id, u.username, u.email, u.password_hash, u.date_of_birth, u.created_at, u.updated_at, u.display_name, u.bio, u.city, u.country, u.hobbies, u.languages, u.detected_country, u.global_discovery FROM users u 
-WHERE u.user_id <> $1 
+SELECT u.user_id, u.username, u.email, u.password_hash, u.date_of_birth, u.created_at, u.updated_at, u.display_name, u.bio, u.city, u.country, u.hobbies, u.languages, u.detected_country, u.global_discovery FROM users u
+WHERE u.user_id <> $1::uuid
 AND u.user_id NOT IN (
-    SELECT user_one_id FROM chats WHERE user_two_id = $1 
-    UNION 
-    SELECT user_two_id FROM chats WHERE user_one_id = $1
-) 
-AND ($2::boolean = true OR u.detected_country = (SELECT detected_country FROM users WHERE user_id = $1))
+    SELECT user_one_id FROM chats WHERE user_two_id = $1::uuid
+    UNION
+    SELECT user_two_id FROM chats WHERE user_one_id = $1::uuid
+)
+AND (
+    $2::boolean = true
+    OR u.detected_country IS NULL
+    OR (SELECT me.detected_country FROM users me WHERE me.user_id = $1::uuid) IS NULL
+    OR u.detected_country = (SELECT me.detected_country FROM users me WHERE me.user_id = $1::uuid)
+)
 ORDER BY RANDOM() LIMIT 30
 `
 
@@ -543,7 +548,17 @@ func (q *Queries) RevealPhotosField(ctx context.Context, cardID uuid.UUID) error
 }
 
 const searchUsersByUsername = `-- name: SearchUsersByUsername :many
-SELECT user_id, username, email, password_hash, date_of_birth, created_at, updated_at, display_name, bio, city, country, hobbies, languages, detected_country, global_discovery FROM users WHERE username ILIKE '%' || $1::text || '%' AND user_id <> $2::uuid LIMIT 20
+SELECT u.user_id, u.username, COALESCE(p.photo_url, '')::text AS photo_url
+FROM users u
+LEFT JOIN user_photos p ON p.user_id = u.user_id AND p.position = 0
+WHERE u.username ILIKE '%' || $1::text || '%'
+AND u.user_id <> $2::uuid
+AND u.user_id NOT IN (
+    SELECT user_one_id FROM chats WHERE user_two_id = $2::uuid
+    UNION
+    SELECT user_two_id FROM chats WHERE user_one_id = $2::uuid
+)
+LIMIT 20
 `
 
 type SearchUsersByUsernameParams struct {
@@ -551,32 +566,22 @@ type SearchUsersByUsernameParams struct {
 	UserID uuid.UUID
 }
 
-func (q *Queries) SearchUsersByUsername(ctx context.Context, arg SearchUsersByUsernameParams) ([]User, error) {
+type SearchUsersByUsernameRow struct {
+	UserID   uuid.UUID
+	Username string
+	PhotoUrl string
+}
+
+func (q *Queries) SearchUsersByUsername(ctx context.Context, arg SearchUsersByUsernameParams) ([]SearchUsersByUsernameRow, error) {
 	rows, err := q.db.QueryContext(ctx, searchUsersByUsername, arg.Query, arg.UserID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []User
+	var items []SearchUsersByUsernameRow
 	for rows.Next() {
-		var i User
-		if err := rows.Scan(
-			&i.UserID,
-			&i.Username,
-			&i.Email,
-			&i.PasswordHash,
-			&i.DateOfBirth,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.DisplayName,
-			&i.Bio,
-			&i.City,
-			&i.Country,
-			&i.Hobbies,
-			&i.Languages,
-			&i.DetectedCountry,
-			&i.GlobalDiscovery,
-		); err != nil {
+		var i SearchUsersByUsernameRow
+		if err := rows.Scan(&i.UserID, &i.Username, &i.PhotoUrl); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
