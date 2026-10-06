@@ -271,6 +271,7 @@ func (s *state) getMe(w http.ResponseWriter, r *http.Request){
 		Country     string    `json:"country"`
 		Hobbies     string    `json:"hobbies"`
 		Languages   string    `json:"languages"`
+		GlobalDiscovery bool `json:"global_discovery"`
 	}
 	
 	RespondWithJSON(w, 200, responseUser{
@@ -286,6 +287,7 @@ func (s *state) getMe(w http.ResponseWriter, r *http.Request){
 		Country:     user.Country.String,
 		Hobbies:     user.Hobbies.String,
 		Languages:   user.Languages.String,
+		GlobalDiscovery: user.GlobalDiscovery,
 	})
 }
 
@@ -1203,7 +1205,7 @@ func (s *state) getChats(w http.ResponseWriter, r *http.Request){
 		photo, err := s.db.GetPrimaryUserPhoto(r.Context(), otherUserID)
 		photoURL := ""
 		if err == nil {
-			photoURL = photo.PhotoUrl
+			photoURL = absoluteURL(r, photo.PhotoUrl)
 		}
 
 		chatsResponse = append(chatsResponse, chatResponse{
@@ -1266,7 +1268,7 @@ func (s *state) uploadPhoto(w http.ResponseWriter, r *http.Request){
 		Position int32    `json:"position"`
 		CreatedAt time.Time `json:"created_at"`
 	}
-	RespondWithJSON(w, 201, responsePhoto{PhotoID: userPhoto.PhotoID, UserID: userPhoto.UserID, PhotoUrl: userPhoto.PhotoUrl, Position: userPhoto.Position, CreatedAt: userPhoto.CreatedAt})
+	RespondWithJSON(w, 201, responsePhoto{PhotoID: userPhoto.PhotoID, UserID: userPhoto.UserID, PhotoUrl: absoluteURL(r, userPhoto.PhotoUrl), Position: userPhoto.Position, CreatedAt: userPhoto.CreatedAt})
 }
 
 func (s *state) getPhotos(w http.ResponseWriter, r *http.Request){
@@ -1293,7 +1295,7 @@ func (s *state) getPhotos(w http.ResponseWriter, r *http.Request){
 		photosResponse = append(photosResponse, photoResponse{
 			PhotoID:   photo.PhotoID,
 			UserID:    photo.UserID,
-			PhotoURL:  photo.PhotoUrl,
+			PhotoURL: absoluteURL(r, photo.PhotoUrl),
 			Position:  photo.Position,
 			CreatedAt: photo.CreatedAt,
 		})
@@ -1390,7 +1392,7 @@ func (s *state) discoverUsers(w http.ResponseWriter, r *http.Request){
 		usersResponse = append(usersResponse, discoverUserResponse{
 			UserID:      user.UserID,
 			DisplayName: user.Username,
-			PhotoURL:    primaryPhoto.PhotoUrl,
+			PhotoURL: absoluteURL(r, primaryPhoto.PhotoUrl),
 		})
 	}
 	RespondWithJSON(w, 200, usersResponse)
@@ -1478,7 +1480,7 @@ func (s *state) getActiveStories(w http.ResponseWriter, r *http.Request){
 			StoryID:   story.StoryID,
 			UserID:    story.UserID,
 			Username:  username,
-			MediaUrl:  story.MediaUrl,
+			MediaUrl: absoluteURL(r, story.MediaUrl),
 			MediaType: story.MediaType,
 			CreatedAt: story.CreatedAt,
 			ExpiresAt: story.ExpiresAt,
@@ -1741,7 +1743,7 @@ func (s *state) getPublicProfile(w http.ResponseWriter, r *http.Request) {
 
 	photoURLs := []string{}
 	for _, photo := range photos {
-		photoURLs = append(photoURLs, photo.PhotoUrl)
+		photoURLs = append(photoURLs, absoluteURL(r, photo.PhotoUrl))
 	}
 
 	type responseProfile struct {
@@ -1790,7 +1792,7 @@ func (s *state) uploadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fileURL := s.cfg.BaseURL + "/uploads/" + filename
+	fileURL := "/uploads/" + filename
 	RespondWithJSON(w, 200, map[string]string{"url": fileURL})
 }
 
@@ -1953,7 +1955,7 @@ func (s *state) searchUsers(w http.ResponseWriter, r *http.Request) {
 		if blocked {
 			continue
 		}
-		results = append(results, searchResult{UserID: u.UserID, Username: u.Username, PhotoURL: u.PhotoUrl})
+		results = append(results, searchResult{UserID: u.UserID, Username: u.Username, PhotoURL: absoluteURL(r, u.PhotoUrl)})
 	}
 	RespondWithJSON(w, 200, results)
 }

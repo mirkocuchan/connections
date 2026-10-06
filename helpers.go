@@ -155,3 +155,14 @@ func normalizeRegionCode(code string) string {
     }
     return code
 }
+
+func absoluteURL(r *http.Request, path string) string {
+    if !strings.HasPrefix(path, "/") {
+        return path
+    }
+    scheme := "http"
+    if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+        scheme = "https"
+    }
+    return scheme + "://" + r.Host + path
+}
