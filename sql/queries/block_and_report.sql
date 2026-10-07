@@ -25,3 +25,5 @@ VALUES (
 )
 RETURNING *;
 
+-- name: ExistsBlockByBlocker :one
+SELECT 1 FROM blocks WHERE blocker_id = $1 AND blocked_id = $2 LIMIT 1;

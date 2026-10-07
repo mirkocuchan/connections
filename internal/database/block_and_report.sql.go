@@ -100,6 +100,22 @@ func (q *Queries) ExistsBlockBetweenUsers(ctx context.Context, arg ExistsBlockBe
 	return column_1, err
 }
 
+const existsBlockByBlocker = `-- name: ExistsBlockByBlocker :one
+SELECT 1 FROM blocks WHERE blocker_id = $1 AND blocked_id = $2 LIMIT 1
+`
+
+type ExistsBlockByBlockerParams struct {
+	BlockerID uuid.UUID
+	BlockedID uuid.UUID
+}
+
+func (q *Queries) ExistsBlockByBlocker(ctx context.Context, arg ExistsBlockByBlockerParams) (int32, error) {
+	row := q.db.QueryRowContext(ctx, existsBlockByBlocker, arg.BlockerID, arg.BlockedID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const getBlocksByBlockerID = `-- name: GetBlocksByBlockerID :many
 SELECT blocker_id, blocked_id, created_at FROM blocks WHERE blocker_id = $1
 `

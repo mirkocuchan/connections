@@ -110,6 +110,21 @@ func (s *state) isBlocked(ctx context.Context, userID1, userID2 uuid.UUID) (bool
     return true, nil
 }
 
+// true si blockerID bloqueó a blockedID (un solo sentido)
+func (s *state) hasBlocked(ctx context.Context, blockerID, blockedID uuid.UUID) (bool, error) {
+    _, err := s.db.ExistsBlockByBlocker(ctx, database.ExistsBlockByBlockerParams{
+        BlockerID: blockerID,
+        BlockedID: blockedID,
+    })
+    if err == sql.ErrNoRows {
+        return false, nil
+    }
+    if err != nil {
+        return false, err
+    }
+    return true, nil
+}
+
 func getClientIP(r *http.Request) string {
 	forwarded := r.Header.Get("X-Forwarded-For")
 	if forwarded != "" {
@@ -165,4 +180,44 @@ func absoluteURL(r *http.Request, path string) string {
         scheme = "https"
     }
     return scheme + "://" + r.Host + path
+}
+
+// busca el chat entre dos usuarios; si no existe, lo crea
+func (s *state) getOrCreateChat(ctx context.Context, userID, otherID uuid.UUID) (database.Chat, error) {
+	chat, err := s.db.GetChatByUserIDs(ctx, database.GetChatByUserIDsParams{
+		UserOneID: userID,
+		UserTwoID: otherID,
+	})
+	if err == sql.ErrNoRows {
+		return s.db.CreateChat(ctx, database.CreateChatParams{
+			UserOneID: userID,
+			UserTwoID: otherID,
+		})
+	}
+	return chat, err
+}
+
+// false si el dueño es anónimo para mí (me inició un chat) o hay bloqueo entre nosotros
+func (s *state) canSeeUser(ctx context.Context, viewerID, ownerID uuid.UUID) (bool, error) {
+	if viewerID == ownerID {
+		return true, nil
+	}
+	blocked, err := s.isBlocked(ctx, viewerID, ownerID)
+	if err != nil {
+		return false, err
+	}
+	if blocked {
+		return false, nil
+	}
+	chat, err := s.db.GetChatByUserIDs(ctx, database.GetChatByUserIDsParams{
+		UserOneID: viewerID,
+		UserTwoID: ownerID,
+	})
+	if err == sql.ErrNoRows {
+		return true, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return chat.UserOneID != ownerID, nil
 }

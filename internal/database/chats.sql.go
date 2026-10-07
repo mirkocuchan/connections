@@ -87,7 +87,12 @@ func (q *Queries) GetChatByUserIDs(ctx context.Context, arg GetChatByUserIDsPara
 }
 
 const getChatsByUserID = `-- name: GetChatsByUserID :many
-SELECT chat_id, user_one_id, user_two_id, created_at, updated_at FROM chats WHERE user_one_id = $1 OR user_two_id = $1
+SELECT c.chat_id, c.user_one_id, c.user_two_id, c.created_at, c.updated_at FROM chats c
+WHERE c.user_one_id = $1 OR c.user_two_id = $1
+ORDER BY COALESCE(
+  (SELECT MAX(m.created_at) FROM messages m WHERE m.chat_id = c.chat_id),
+  c.created_at
+) DESC
 `
 
 func (q *Queries) GetChatsByUserID(ctx context.Context, userOneID uuid.UUID) ([]Chat, error) {

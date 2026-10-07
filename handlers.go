@@ -10,6 +10,7 @@ import(
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"database/sql"
+	"strings"
 	"os"
 )
 
@@ -291,73 +292,6 @@ func (s *state) getMe(w http.ResponseWriter, r *http.Request){
 	})
 }
 
-type createChatRequest struct {
-    OtherUserID uuid.UUID `json:"other_user_id"`
-}
-
-func (s *state) createChat(w http.ResponseWriter, r *http.Request){
-	defer r.Body.Close()
-
-	userData, err := io.ReadAll(r.Body)
-	if err != nil{
-		RespondWithError(w, 400, "couldn't read the request body")
-		return
-	}
-	
-	var body createChatRequest
-	if err := json.Unmarshal(userData, &body); err != nil {
-        RespondWithError(w, 400, "error unmarshalling JSON")
-		return
-    }
-	//getting the userID of the user that is being talked to
-
-	//quiero obtener el userID del contexto de la request. el middleware authMiddleware lo puso ahí, así que si llegamos a este punto, el userID debería estar en el contexto.
-	userID, err := s.getUserIDFromContext(r)
-	if err != nil{
-		RespondWithError(w, 401, "Unauthorized")
-		return
-	}
-	isBlocked, err := s.isBlocked(r.Context(), userID, body.OtherUserID)
-	if err != nil{
-		RespondWithError(w, 500, "error checking block status")
-		return
-	}
-	if isBlocked{
-		RespondWithError(w, 403, "you have been blocked by this user")
-		return
-	}
-	userIDParams := database.GetChatByUserIDsParams{
-		UserOneID: userID,
-		UserTwoID: body.OtherUserID, // Reemplaza con el userID del otro usuario
-	}
-
-	chat, err := s.db.GetChatByUserIDs(r.Context(), userIDParams)
-	
-	if err == sql.ErrNoRows{
-		//si no hay chat, lo creo. si hay chat, devuelvo el chat existente.
-		newChatParams := database.CreateChatParams{
-			UserOneID: userID,
-			UserTwoID: body.OtherUserID, // Reemplaza con el userID del otro usuario
-		}
-
-		newChat, err := s.db.CreateChat(r.Context(), newChatParams)
-		if err != nil{
-			RespondWithError(w, 500, "couldn't create the chat in the database")
-			return
-		}
-			
-		RespondWithJSON(w, 200, map[string]string{"message": "chat created successfully", "chat_id": newChat.ChatID.String()})
-		return
-	}
-	
-	if err != nil{
-		RespondWithError(w, 500, "couldn't find the chat in the database")
-		return
-	}
-
-	RespondWithJSON(w, 200, map[string]string{"message": "chat already exists", "chat_id": chat.ChatID.String()})
-}
-
 type createMessage struct {
     Content string `json:"content"`
 }
@@ -407,7 +341,7 @@ func (s *state) createMessage(w http.ResponseWriter, r *http.Request){
 		return
 	}
 	if isBlocked{
-		RespondWithError(w, 403, "you have been blocked by this user")
+		RespondWithError(w, 403, "you have been blocked by this user, you can't send messages")
 		return
 	}
 
@@ -1167,6 +1101,7 @@ func (s *state) getChats(w http.ResponseWriter, r *http.Request){
 		Nickname     string    `json:"nickname"`
 		LastMessage  string    `json:"last_message"`
 		PhotoURL     string    `json:"photo_url"`
+		Blocked		 bool 	   `json:"blocked"`
 		CreatedAt    time.Time `json:"created_at"`
 		UpdatedAt    time.Time `json:"updated_at"`
 	}
@@ -1185,6 +1120,7 @@ func (s *state) getChats(w http.ResponseWriter, r *http.Request){
 			SubjectID: otherUserID,
 		}
 		card, err := s.db.GetCardWithChatCreatorAndSubject(r.Context(), cardParams)
+		cardOK := err == nil
 
 		displayName := "anon-" + otherUserID.String()[:8]
 		if err == nil && card.Nickname.Valid && card.Nickname.String != "" {
@@ -1202,12 +1138,28 @@ func (s *state) getChats(w http.ResponseWriter, r *http.Request){
 			lastMessageContent = lastMessage.Content
 		}
 
-		photo, err := s.db.GetPrimaryUserPhoto(r.Context(), otherUserID)
-		photoURL := ""
-		if err == nil {
-			photoURL = absoluteURL(r, photo.PhotoUrl)
+		// el iniciador ve la foto de quien eligió, el receptor solo si el dueño la reveló
+		canSeePhoto := chat.UserOneID == userID
+		if !canSeePhoto && cardOK {
+			data, err := s.db.GetCardWithSubjectData(r.Context(), card.CardID)
+			if err == nil && data.PhotosVisible.Valid && data.PhotosVisible.Bool {
+				canSeePhoto = true
+			}
 		}
 
+		photoURL := ""
+		if canSeePhoto {
+			photo, err := s.db.GetPrimaryUserPhoto(r.Context(), otherUserID)
+			if err == nil {
+				photoURL = absoluteURL(r, photo.PhotoUrl)
+			}
+		}
+
+		blocked, err := s.hasBlocked(r.Context(), userID, otherUserID)
+		if err != nil {
+			RespondWithError(w, 500, "error checking block status")
+			return
+		}
 		chatsResponse = append(chatsResponse, chatResponse{
 			ChatID:      chat.ChatID,
 			UserOneID:   chat.UserOneID,
@@ -1216,6 +1168,7 @@ func (s *state) getChats(w http.ResponseWriter, r *http.Request){
 			Nickname:    displayName,
 			LastMessage: lastMessageContent,
 			PhotoURL:    photoURL,
+			Blocked:  	 blocked,
 			CreatedAt:   chat.CreatedAt,
 			UpdatedAt:   chat.UpdatedAt,
 		})
@@ -1469,7 +1422,20 @@ func (s *state) getActiveStories(w http.ResponseWriter, r *http.Request){
 		if story.ViewedAt.Valid {
 			viewedAt = &story.ViewedAt.Time
 		}
-
+		// no mostrar historias de quien me inició un chat (anónimo para mí) ni de bloqueados
+		if story.UserID != userID {
+			blocked, err := s.isBlocked(r.Context(), userID, story.UserID)
+			if err != nil || blocked {
+				continue
+			}
+			chat, err := s.db.GetChatByUserIDs(r.Context(), database.GetChatByUserIDsParams{
+				UserOneID: userID,
+				UserTwoID: story.UserID,
+			})
+			if err == nil && chat.UserOneID == story.UserID {
+				continue
+			}
+		}
 		author, err := s.db.GetUserByID(r.Context(), story.UserID)
 		username := "usuario"
 		if err == nil {
@@ -1500,8 +1466,25 @@ func (s *state) viewStory(w http.ResponseWriter, r *http.Request){
 	storyIDString := r.PathValue("storyID")
 	storyID, err := uuid.Parse(storyIDString)
 	if err != nil {
-    	RespondWithError(w, 404, "Invalid story ID")
-    	return
+		RespondWithError(w, 404, "Invalid story ID")
+		return
+	}
+	// busco la historia para saber de quién es
+	story, err := s.db.GetStoryByID(r.Context(), storyID)
+	if err != nil {
+		RespondWithError(w, 404, "Story not found")
+		return
+	}
+
+	// si el dueño me es anónimo o hay bloqueo, no puedo ver ni registrar la vista
+	ok, err := s.canSeeUser(r.Context(), userID, story.UserID)
+	if err != nil {
+		RespondWithError(w, 500, "error checking permissions")
+		return
+	}
+	if !ok {
+		RespondWithError(w, 404, "Story not found")
+		return
 	}
 	registerStoryViewParams := database.RegisterStoryViewParams{
 		StoryID:  storyID,
@@ -1716,7 +1699,7 @@ func (s *state) reportUser(w http.ResponseWriter, r *http.Request){
 }
 
 func (s *state) getPublicProfile(w http.ResponseWriter, r *http.Request) {
-	_, err := s.getUserIDFromContext(r)
+	requesterID, err := s.getUserIDFromContext(r)
 	if err != nil {
 		RespondWithError(w, 401, "Unauthorized")
 		return
@@ -1727,6 +1710,33 @@ func (s *state) getPublicProfile(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		RespondWithError(w, 404, "Invalid user ID")
 		return
+	}
+
+	// tu propio perfil siempre se puede ver; el de otros, con reglas
+	if requesterID != userID {
+		blocked, err := s.isBlocked(r.Context(), requesterID, userID)
+		if err != nil {
+			RespondWithError(w, 500, "error checking block status")
+			return
+		}
+		if blocked {
+			RespondWithError(w, 403, "profile not available")
+			return
+		}
+
+		// si el dueño del perfil inició un chat conmigo, es anónimo para mí
+		chat, err := s.db.GetChatByUserIDs(r.Context(), database.GetChatByUserIDsParams{
+			UserOneID: requesterID,
+			UserTwoID: userID,
+		})
+		if err != nil && err != sql.ErrNoRows {
+			RespondWithError(w, 500, "error checking chat")
+			return
+		}
+		if err == nil && chat.UserOneID == userID {
+			RespondWithError(w, 403, "profile not available")
+			return
+		}
 	}
 
 	user, err := s.db.GetUserByID(r.Context(), userID)
@@ -1883,9 +1893,17 @@ func (s *state) getStoryViewers(w http.ResponseWriter, r *http.Request) {
 		if v.ViewerID == userID {
 			continue
 		}
+		name := v.Username
+		chat, err := s.db.GetChatByUserIDs(r.Context(), database.GetChatByUserIDsParams{
+			UserOneID: userID,
+			UserTwoID: v.ViewerID,
+		})
+		if err == nil && chat.UserOneID == v.ViewerID {
+			name = "anon-" + v.ViewerID.String()[:8]
+		}
 		viewersResponse = append(viewersResponse, viewerResponse{
 			ViewerID: v.ViewerID,
-			Username: v.Username,
+			Username: name,
 			ViewedAt: v.ViewedAt,
 		})
 	}
@@ -1960,6 +1978,70 @@ func (s *state) searchUsers(w http.ResponseWriter, r *http.Request) {
 	RespondWithJSON(w, 200, results)
 }
 
+type firstMessageRequest struct {
+	Content string `json:"content"`
+}
+
+func (s *state) createFirstMessage(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	userID, err := s.getUserIDFromContext(r)
+	if err != nil {
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
+	otherID, err := uuid.Parse(r.PathValue("userID"))
+	if err != nil {
+		RespondWithError(w, 400, "Invalid user ID")
+		return
+	}
+	if otherID == userID {
+		RespondWithError(w, 400, "you can't chat with yourself")
+		return
+	}
+
+	var body firstMessageRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		RespondWithError(w, 400, "error reading JSON")
+		return
+	}
+	content := strings.TrimSpace(body.Content)
+	if content == "" {
+		RespondWithError(w, 400, "message can't be empty")
+		return
+	}
+	if _, err := s.db.GetUserByID(r.Context(), otherID); err != nil {
+		RespondWithError(w, 404, "user not found")
+		return
+	}
+	blocked, err := s.isBlocked(r.Context(), userID, otherID)
+	if err != nil {
+		RespondWithError(w, 500, "error checking block status")
+		return
+	}
+	if blocked {
+		RespondWithError(w, 403, "no se pueden enviar mensajes en este chat")
+		return
+	}
+	chat, err := s.getOrCreateChat(r.Context(), userID, otherID)
+	if err != nil {
+		RespondWithError(w, 500, "couldn't get or create the chat")
+		return
+	}
+	message, err := s.db.CreateMessage(r.Context(), database.CreateMessageParams{
+		ChatID:   chat.ChatID,
+		SenderID: userID,
+		Content:  content,
+	})
+	if err != nil {
+		RespondWithError(w, 500, "couldn't create the message")
+		return
+	}
+	RespondWithJSON(w, 201, map[string]any{
+		"chat_id":    chat.ChatID,
+		"message_id": message.MessageID,
+	})
+}
+
 //el state es el receiver, (el objeto que está ejecutando el método)
 //cuando handlers() escribe s.register, ese s es el mismo que le llegó a handlers(),  necesita recibir la instancia de alguna manera 
 func (s *state) handlers() {
@@ -1969,7 +2051,6 @@ func (s *state) handlers() {
 	http.Handle("POST /refresh", http.HandlerFunc(s.refresh))
 	http.Handle("POST /logout", http.HandlerFunc(s.logout))
 
-	http.Handle("POST /chats", s.authMiddleware(http.HandlerFunc(s.createChat)))
 	http.Handle("POST /chats/{chatID}/messages", s.authMiddleware(http.HandlerFunc(s.createMessage)))
 	http.Handle("GET /chats/{chatID}/messages", s.authMiddleware(http.HandlerFunc(s.getMessages)))
 	http.Handle("DELETE /chats/{chatID}", s.authMiddleware(http.HandlerFunc(s.deleteChat)))
@@ -2017,6 +2098,7 @@ func (s *state) handlers() {
 
 	http.Handle("PATCH /me/discovery-settings", s.authMiddleware(http.HandlerFunc(s.updateGlobalDiscovery)))
 	http.Handle("GET /users/search", s.authMiddleware(http.HandlerFunc(s.searchUsers)))
+	http.Handle("POST /users/{userID}/messages", s.authMiddleware(http.HandlerFunc(s.createFirstMessage)))
 }
 
 
