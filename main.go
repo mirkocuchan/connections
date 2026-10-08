@@ -37,11 +37,10 @@ func main(){
 	}
 	//inicializo la libreta con los handlers, me va a permitir usar las rutas y las funciones
 	programState.handlers()
-	
+	programState.startCleanupLoop()
 	//escuchando requests a traves de un puerto
 	err = http.ListenAndServe(cfg.PORT, nil)
 	if err != nil{
 		log.Fatalf("port listening error: %v", err)
 	}
-
 }

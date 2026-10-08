@@ -59,6 +59,15 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 	return i, err
 }
 
+const deleteUser = `-- name: DeleteUser :exec
+DELETE FROM users WHERE user_id = $1
+`
+
+func (q *Queries) DeleteUser(ctx context.Context, userID uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, deleteUser, userID)
+	return err
+}
+
 const getUserByEmail = `-- name: GetUserByEmail :one
 SELECT user_id, username, email, password_hash, date_of_birth, created_at, updated_at, display_name, bio, city, country, hobbies, languages, detected_country, global_discovery FROM users WHERE email = $1
 `
@@ -111,6 +120,15 @@ func (q *Queries) GetUserByID(ctx context.Context, userID uuid.UUID) (User, erro
 		&i.GlobalDiscovery,
 	)
 	return i, err
+}
+
+const revokeAllUserRefreshTokens = `-- name: RevokeAllUserRefreshTokens :exec
+UPDATE refresh_tokens SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL
+`
+
+func (q *Queries) RevokeAllUserRefreshTokens(ctx context.Context, userID uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, revokeAllUserRefreshTokens, userID)
+	return err
 }
 
 const updateDetectedCountry = `-- name: UpdateDetectedCountry :exec
@@ -195,4 +213,18 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, e
 		&i.GlobalDiscovery,
 	)
 	return i, err
+}
+
+const updateUserPassword = `-- name: UpdateUserPassword :exec
+UPDATE users SET password_hash = $2, updated_at = NOW() WHERE user_id = $1
+`
+
+type UpdateUserPasswordParams struct {
+	UserID       uuid.UUID
+	PasswordHash string
+}
+
+func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) error {
+	_, err := q.db.ExecContext(ctx, updateUserPassword, arg.UserID, arg.PasswordHash)
+	return err
 }

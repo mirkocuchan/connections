@@ -50,6 +50,38 @@ func (q *Queries) CreateStory(ctx context.Context, arg CreateStoryParams) (Story
 	return i, err
 }
 
+const deleteExpiredStories = `-- name: DeleteExpiredStories :many
+DELETE FROM stories WHERE expires_at <= NOW() RETURNING user_id, media_url
+`
+
+type DeleteExpiredStoriesRow struct {
+	UserID   uuid.UUID
+	MediaUrl string
+}
+
+func (q *Queries) DeleteExpiredStories(ctx context.Context) ([]DeleteExpiredStoriesRow, error) {
+	rows, err := q.db.QueryContext(ctx, deleteExpiredStories)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DeleteExpiredStoriesRow
+	for rows.Next() {
+		var i DeleteExpiredStoriesRow
+		if err := rows.Scan(&i.UserID, &i.MediaUrl); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const deleteStoryByID = `-- name: DeleteStoryByID :exec
 DELETE FROM stories WHERE story_id = $1 AND user_id = $2
 `
@@ -166,6 +198,33 @@ func (q *Queries) GetStoryByID(ctx context.Context, storyID uuid.UUID) (Story, e
 		&i.ExpiresAt,
 	)
 	return i, err
+}
+
+const getStoryMediaByUserID = `-- name: GetStoryMediaByUserID :many
+SELECT media_url FROM stories WHERE user_id = $1
+`
+
+func (q *Queries) GetStoryMediaByUserID(ctx context.Context, userID uuid.UUID) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, getStoryMediaByUserID, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var media_url string
+		if err := rows.Scan(&media_url); err != nil {
+			return nil, err
+		}
+		items = append(items, media_url)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getStoryViewers = `-- name: GetStoryViewers :many

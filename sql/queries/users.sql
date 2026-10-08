@@ -32,3 +32,12 @@ UPDATE users SET detected_country = $1 WHERE user_id = $2;
 
 -- name: UpdateGlobalDiscovery :exec
 UPDATE users SET global_discovery = $1 WHERE user_id = $2;
+
+-- name: DeleteUser :exec
+DELETE FROM users WHERE user_id = $1;
+
+-- name: UpdateUserPassword :exec
+UPDATE users SET password_hash = $2, updated_at = NOW() WHERE user_id = $1;
+
+-- name: RevokeAllUserRefreshTokens :exec
+UPDATE refresh_tokens SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL;

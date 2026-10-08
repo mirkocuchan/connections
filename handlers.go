@@ -12,6 +12,7 @@ import(
 	"database/sql"
 	"strings"
 	"os"
+	"log"
 )
 
 type receivedUser struct {
@@ -1531,6 +1532,7 @@ func (s *state) deleteStory(w http.ResponseWriter, r *http.Request){
 		RespondWithError(w, 500, "couldn't delete story")
 		return
 	}
+	removeUploadedFile(userID, story.MediaUrl)
 	RespondWithJSON(w, 200, map[string]interface{}{"status": "success"})
 }
 
@@ -1951,7 +1953,7 @@ func (s *state) searchUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	users, err := s.db.SearchUsersByUsername(r.Context(), database.SearchUsersByUsernameParams{
-		Query: query,
+		Query: escapeLike(query),
 		UserID:  userID,
 	})
 	if err != nil {
@@ -2042,6 +2044,117 @@ func (s *state) createFirstMessage(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+type deleteAccountRequest struct {
+	Password string `json:"password"`
+}
+
+func (s *state) deleteAccount(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+
+	userID, err := s.getUserIDFromContext(r)
+	if err != nil {
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
+
+	var body deleteAccountRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		RespondWithError(w, 400, "error reading JSON")
+		return
+	}
+
+	user, err := s.db.GetUserByID(r.Context(), userID)
+	if err != nil {
+		RespondWithError(w, 404, "User not found")
+		return
+	}
+
+	rightPassword, err := auth.CheckPasswordHash(body.Password, user.PasswordHash)
+	if err != nil || !rightPassword {
+		RespondWithError(w, 403, "Incorrect password")
+		return
+	}
+	// junto las rutas de archivos ANTES de borrar: el CASCADE se lleva las filas que las guardan
+	files := []string{}
+	photos, err := s.db.GetUserPhotos(r.Context(), userID)
+	if err == nil {
+		for _, p := range photos {
+			files = append(files, p.PhotoUrl)
+		}
+	}
+	stories, err := s.db.GetStoryMediaByUserID(r.Context(), userID)
+	if err == nil {
+		files = append(files, stories...)
+	}
+	// el CASCADE borra fotos, historias, chats, mensajes, fichas, bloqueos y tokens
+	if err := s.db.DeleteUser(r.Context(), userID); err != nil {
+		RespondWithError(w, 500, "couldn't delete the account")
+		return
+	}
+
+	// recién ahora, borro los archivos del disco. un fallo acá no debe romper la respuesta
+	for _, f := range files {
+		removeUploadedFile(userID, f)
+	}
+	RespondWithJSON(w, 200, map[string]string{"status": "success"})
+}
+
+type changePasswordRequest struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+}
+
+func (s *state) changePassword(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+
+	userID, err := s.getUserIDFromContext(r)
+	if err != nil {
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
+	var body changePasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		RespondWithError(w, 400, "error reading JSON")
+		return
+	}
+	if len(body.NewPassword) < 6 {
+		RespondWithError(w, 400, "new password must be at least 6 characters")
+		return
+	}
+	if body.NewPassword == body.CurrentPassword {
+		RespondWithError(w, 400, "new password must be different")
+		return
+	}
+	user, err := s.db.GetUserByID(r.Context(), userID)
+	if err != nil {
+		RespondWithError(w, 404, "User not found")
+		return
+	}
+	rightPassword, err := auth.CheckPasswordHash(body.CurrentPassword, user.PasswordHash)
+	if err != nil || !rightPassword {
+		RespondWithError(w, 403, "Incorrect password")
+		return
+	}
+	hashed, err := auth.HashPassword(body.NewPassword)
+	if err != nil {
+		RespondWithError(w, 500, "error hashing the password")
+		return
+	}
+	err = s.db.UpdateUserPassword(r.Context(), database.UpdateUserPasswordParams{
+		UserID:       userID,
+		PasswordHash: hashed,
+	})
+	if err != nil {
+		RespondWithError(w, 500, "couldn't update the password")
+		return
+	}
+	// cierro todas las sesiones. si falla, la contraseña ya cambió, así que solo lo registro
+	if err := s.db.RevokeAllUserRefreshTokens(r.Context(), userID); err != nil {
+		log.Printf("couldn't revoke refresh tokens for %s: %v", userID, err)
+	}
+	RespondWithJSON(w, 200, map[string]string{"status": "success"})
+}
+
 //el state es el receiver, (el objeto que está ejecutando el método)
 //cuando handlers() escribe s.register, ese s es el mismo que le llegó a handlers(),  necesita recibir la instancia de alguna manera 
 func (s *state) handlers() {
@@ -2099,6 +2212,9 @@ func (s *state) handlers() {
 	http.Handle("PATCH /me/discovery-settings", s.authMiddleware(http.HandlerFunc(s.updateGlobalDiscovery)))
 	http.Handle("GET /users/search", s.authMiddleware(http.HandlerFunc(s.searchUsers)))
 	http.Handle("POST /users/{userID}/messages", s.authMiddleware(http.HandlerFunc(s.createFirstMessage)))
+
+	http.Handle("DELETE /me", s.authMiddleware(http.HandlerFunc(s.deleteAccount)))
+	http.Handle("PATCH /me/password", s.authMiddleware(http.HandlerFunc(s.changePassword)))
 }
 
 

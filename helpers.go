@@ -9,6 +9,9 @@ import(
     "database/sql"
     "net"
 	"encoding/json"
+    "os"
+    "path/filepath"
+    "log"
     "fmt"
     "context"
     "github.com/mirkocuchan/connections/internal/database"
@@ -220,4 +223,51 @@ func (s *state) canSeeUser(ctx context.Context, viewerID, ownerID uuid.UUID) (bo
 		return false, err
 	}
 	return chat.UserOneID != ownerID, nil
+}
+
+// borra del disco un archivo subido, solo si pertenece a ese usuario
+func removeUploadedFile(ownerID uuid.UUID, url string) {
+	if !strings.HasPrefix(url, "/uploads/") {
+		return
+	}
+	name := filepath.Base(url)
+	if !strings.HasPrefix(name, ownerID.String()+"-") {
+		return
+	}
+	if err := os.Remove(filepath.Join("uploads", name)); err != nil && !os.IsNotExist(err) {
+		log.Printf("couldn't remove %s: %v", name, err)
+	}
+}
+
+func (s *state) cleanupExpiredStories() {
+	rows, err := s.db.DeleteExpiredStories(context.Background())
+	if err != nil {
+		log.Printf("cleanup: couldn't delete expired stories: %v", err)
+		return
+	}
+	for _, row := range rows {
+		removeUploadedFile(row.UserID, row.MediaUrl)
+	}
+	if len(rows) > 0 {
+		log.Printf("cleanup: %d expired stories removed", len(rows))
+	}
+}
+
+func (s *state) startCleanupLoop() {
+	go func() {
+		s.cleanupExpiredStories() // una vez al arrancar
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			s.cleanupExpiredStories()
+		}
+	}()
+}
+
+// escapa los comodines de LIKE para que se busquen como texto literal
+func escapeLike(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `%`, `\%`)
+	s = strings.ReplaceAll(s, `_`, `\_`)
+	return s
 }
