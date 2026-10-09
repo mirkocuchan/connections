@@ -1,6 +1,6 @@
 package main
 
-import(
+import (
 	"net/http"
 	"io"
 	"github.com/mirkocuchan/connections/internal/auth"
@@ -2155,6 +2155,69 @@ func (s *state) changePassword(w http.ResponseWriter, r *http.Request) {
 	RespondWithJSON(w, 200, map[string]string{"status": "success"})
 }
 
+type pushTokenRequest struct {
+	Token string `json:"token"`
+}
+
+func validPushToken(t string) bool {
+	return (strings.HasPrefix(t, "ExponentPushToken[") || strings.HasPrefix(t, "ExpoPushToken[")) &&
+		strings.HasSuffix(t, "]")
+}
+
+func (s *state) savePushToken(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+
+	userID, err := s.getUserIDFromContext(r)
+	if err != nil {
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
+
+	var req pushTokenRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		RespondWithError(w, 400, "Error reading JSON")
+		return
+	}
+	if !validPushToken(req.Token) {
+		RespondWithError(w, 400, "Invalid push token")
+		return
+	}
+
+	err = s.db.UpsertPushToken(r.Context(), database.UpsertPushTokenParams{
+		Token:  req.Token,
+		UserID: userID,
+	})
+	if err != nil {
+		RespondWithError(w, 500, "Couldn't save push token")
+		return
+	}
+	RespondWithJSON(w, 200, map[string]string{"status": "success"})
+}
+
+func (s *state) deletePushToken(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+
+	userID, err := s.getUserIDFromContext(r)
+	if err != nil {
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
+	var req pushTokenRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Token == "" {
+		RespondWithError(w, 400, "Invalid request body")
+		return
+	}
+	err = s.db.DeletePushTokenForUser(r.Context(), database.DeletePushTokenForUserParams{
+		Token:  req.Token,
+		UserID: userID,
+	})
+	if err != nil {
+		RespondWithError(w, 500, "Couldn't delete push token")
+		return
+	}
+	RespondWithJSON(w, 200, map[string]string{"status": "success"})
+}
+
 //el state es el receiver, (el objeto que está ejecutando el método)
 //cuando handlers() escribe s.register, ese s es el mismo que le llegó a handlers(),  necesita recibir la instancia de alguna manera 
 func (s *state) handlers() {
@@ -2215,6 +2278,9 @@ func (s *state) handlers() {
 
 	http.Handle("DELETE /me", s.authMiddleware(http.HandlerFunc(s.deleteAccount)))
 	http.Handle("PATCH /me/password", s.authMiddleware(http.HandlerFunc(s.changePassword)))
+
+	http.Handle("POST /me/push-token", s.authMiddleware(http.HandlerFunc(s.savePushToken)))
+	http.Handle("DELETE /me/push-token", s.authMiddleware(http.HandlerFunc(s.deletePushToken)))
 }
 
 

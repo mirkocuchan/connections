@@ -53,6 +53,13 @@ type Message struct {
 	UpdatedAt time.Time
 }
 
+type PushToken struct {
+	Token     string
+	UserID    uuid.UUID
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
 type RefreshToken struct {
 	TokenHash string
 	CreatedAt time.Time
