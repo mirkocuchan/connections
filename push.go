@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/mirkocuchan/connections/internal/database"
 )
 
 const expoPushURL = "https://exp.host/--/api/v2/push/send" //servidor de expo a donde se pushean las notificaciones. se puede cambiar por un servidor propio si se quiere.
@@ -72,6 +73,10 @@ func (s *state) sendPush(userID uuid.UUID, title, body string, data map[string]a
 		return
 	}//registra los errores de envío del request, que pueden ser por problemas de red, etc. no son errores de la app.
 	defer resp.Body.Close() //resp viene como un stream, hay que cerrarlo al final para liberar recursos. si no se cierra, se queda abierto y puede generar problemas de memoria.
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("push: expo returned status %d", resp.StatusCode)
+		return
+	}
 
 	var res expoResponse
 	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
@@ -92,4 +97,43 @@ func (s *state) sendPush(userID uuid.UUID, title, body string, data map[string]a
 			}
 		}
 	}
+}
+
+//displayNameFor devuelve el nombre que viewerID ve de otherID en un chat.
+//misma regla que getChats: apodo > username real (solo si el viewer inició) > anon. es para no mandar el nombre cuando se es anonimo en las notifciaciones. si el viewer es el que inició el chat, se le muestra el username real del otro usuario, sino se le muestra anon. si hay un apodo, se muestra siempre.
+func (s *state) displayNameFor(ctx context.Context, chatID, viewerID, otherID uuid.UUID, viewerIsInitiator bool) string {
+	card, err := s.db.GetCardWithChatCreatorAndSubject(ctx, database.GetCardWithChatCreatorAndSubjectParams{
+		ChatID:    chatID,
+		CreatorID: viewerID,
+		SubjectID: otherID,
+	})
+	if err == nil && card.Nickname.Valid && card.Nickname.String != "" {
+		return card.Nickname.String
+	}
+	if viewerIsInitiator {
+		if u, err := s.db.GetUserByID(ctx, otherID); err == nil {
+			return u.Username
+		}
+	}
+	return "anon-" + otherID.String()[:8]
+}
+
+func truncate(text string, n int) string {
+	r := []rune(text)
+	if len(r) <= n {
+		return text
+	}
+	return string(r[:n]) + "…"
+}
+
+//notifyNewMessage corre entera en una goroutine: calcula el título y manda el push.
+func (s *state) notifyNewMessage(chatID, senderID, recipientID uuid.UUID, recipientIsInitiator bool, content string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	title := s.displayNameFor(ctx, chatID, recipientID, senderID, recipientIsInitiator)
+	cancel()
+
+	s.sendPush(recipientID, title, truncate(content, 100), map[string]any{
+		"chat_id": chatID.String(),
+		"name":    title,
+	})
 }

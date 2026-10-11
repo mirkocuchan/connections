@@ -312,7 +312,12 @@ func (s *state) createMessage(w http.ResponseWriter, r *http.Request){
 		return
     }
 	//getting the content of the message that is being sent
-
+	body.Content = strings.TrimSpace(body.Content)
+	if body.Content == "" {
+		RespondWithError(w, 400, "message can't be empty")
+		return
+	}
+	
 	//message sender
 	userID, err := s.getUserIDFromContext(r)
 	if err != nil{
@@ -357,7 +362,11 @@ func (s *state) createMessage(w http.ResponseWriter, r *http.Request){
 		RespondWithError(w, 500, "couldn't create the message in the database")
 		return
 	}
-
+	recipientID := chat.UserOneID
+	if recipientID == userID {
+		recipientID = chat.UserTwoID
+	}
+	go s.notifyNewMessage(chatID, userID, recipientID, chat.UserOneID == recipientID, body.Content)
 	type messageResponse struct {
 		MessageID uuid.UUID `json:"message_id"`
 		ChatID    uuid.UUID `json:"chat_id"`
@@ -2038,6 +2047,9 @@ func (s *state) createFirstMessage(w http.ResponseWriter, r *http.Request) {
 		RespondWithError(w, 500, "couldn't create the message")
 		return
 	}
+	
+	go s.notifyNewMessage(chat.ChatID, userID, otherID, chat.UserOneID == otherID, content)
+
 	RespondWithJSON(w, 201, map[string]any{
 		"chat_id":    chat.ChatID,
 		"message_id": message.MessageID,
