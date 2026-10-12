@@ -370,16 +370,15 @@ func (s *state) createMessage(w http.ResponseWriter, r *http.Request){
 	type messageResponse struct {
 		MessageID uuid.UUID `json:"message_id"`
 		ChatID    uuid.UUID `json:"chat_id"`
-		SenderID  uuid.UUID `json:"sender_id"`
+		IsMine    bool      `json:"is_mine"`
 		Content   string    `json:"content"`
 		CreatedAt time.Time `json:"created_at"`
 		UpdatedAt time.Time `json:"updated_at"`
 	}
-
 	RespondWithJSON(w, 201, messageResponse{
 		MessageID: newMessage.MessageID,
 		ChatID:    newMessage.ChatID,
-		SenderID:  newMessage.SenderID,
+		IsMine:    true,
 		Content:   newMessage.Content,
 		CreatedAt: newMessage.CreatedAt,
 		UpdatedAt: newMessage.UpdatedAt,})
@@ -417,22 +416,22 @@ func (s *state) getMessages(w http.ResponseWriter, r *http.Request){
 	type messageResponse struct {
 		MessageID uuid.UUID `json:"message_id"`
 		ChatID    uuid.UUID `json:"chat_id"`
-		SenderID  uuid.UUID `json:"sender_id"`
+		IsMine    bool      `json:"is_mine"`
 		Content   string    `json:"content"`
 		CreatedAt time.Time `json:"created_at"`
 		UpdatedAt time.Time `json:"updated_at"`
 	}
 	messagesResponse := []messageResponse{}
-	for _, message := range messages{
+	for _, message := range messages {
 		messagesResponse = append(messagesResponse, messageResponse{
 			MessageID: message.MessageID,
 			ChatID:    message.ChatID,
-			SenderID:  message.SenderID,
+			IsMine:    message.SenderID == userID,
 			Content:   message.Content,
 			CreatedAt: message.CreatedAt,
-			UpdatedAt: message.UpdatedAt,})
+			UpdatedAt: message.UpdatedAt,
+		})
 	}
-
 	RespondWithJSON(w, 200, messagesResponse)
 }
 
@@ -593,9 +592,9 @@ func (s *state) getUserCard(w http.ResponseWriter, r *http.Request){
 	type responseCard struct {
 		CardID             uuid.UUID `json:"card_id"`
 		ChatID             uuid.UUID `json:"chat_id"`
-		UserOneID          uuid.UUID `json:"user_one_id"`
-		CreatorID          uuid.UUID `json:"creator_id"`
-		SubjectID          uuid.UUID `json:"subject_id"`
+		IsInitiator        bool       `json:"is_initiator"`
+		ChatName           string     `json:"chat_name"`
+		SubjectID          *uuid.UUID `json:"subject_id,omitempty"` //solo para el iniciador
 		Nickname           sql.NullString `json:"nickname"`
 		NotesOnSubject     sql.NullString `json:"notes_on_subject"`
 		DisplayNameVisible sql.NullBool `json:"display_name"`
@@ -614,7 +613,12 @@ func (s *state) getUserCard(w http.ResponseWriter, r *http.Request){
 		Hobbies           string `json:"hobbies_value"`
 		Languages         string `json:"languages_value"`
 	}
-	
+	isInitiator := chat.UserOneID == userID
+	var subjectForClient *uuid.UUID
+	if isInitiator {
+		subjectForClient = &subjectID
+	}
+
 	card, err := s.db.GetCardWithChatCreatorAndSubject(r.Context(), cardParams)
 	if err == sql.ErrNoRows{
 		//si no hay card, la creo. si hay card, devuelvo la card existente.
@@ -629,9 +633,9 @@ func (s *state) getUserCard(w http.ResponseWriter, r *http.Request){
 			RespondWithError(w, 500, "couldn't create the card in the database")
 			return
 		}
-			
+		chatName := s.displayNameFor(r.Context(), chatID, userID, subjectID, isInitiator)
 		RespondWithJSON(w, 200, responseCard{CardID: newCard.CardID, ChatID: chat.ChatID, 
-		UserOneID: chat.UserOneID, CreatorID: newCard.CreatorID, SubjectID: newCard.SubjectID, Nickname: newCard.Nickname,
+		IsInitiator: isInitiator, ChatName: chatName, SubjectID: subjectForClient, Nickname: newCard.Nickname,
 		NotesOnSubject: newCard.NotesOnSubject, DisplayNameVisible: newCard.DisplayNameVisible, DateOfBirthVisible: newCard.DateOfBirthVisible, 
 		CityVisible: newCard.CityVisible, CountryVisible: newCard.CountryVisible, PhotosVisible: newCard.PhotosVisible, BioVisible: newCard.BioVisible, HobbiesVisible: newCard.HobbiesVisible, 
 		LanguagesVisible: newCard.LanguagesVisible, DisplayName: "", DateOfBirth: "", City: "", Country: "", Bio: "", Hobbies: "", Languages: ""})
@@ -647,8 +651,8 @@ func (s *state) getUserCard(w http.ResponseWriter, r *http.Request){
 		RespondWithError(w, 500, "couldn't get the card data")
 		return
 	}
-	
-	RespondWithJSON(w, 200, responseCard{CardID: card.CardID, ChatID: chat.ChatID, UserOneID: chat.UserOneID, CreatorID: card.CreatorID, SubjectID: card.SubjectID, Nickname: card.Nickname,
+	chatName := s.displayNameFor(r.Context(), chatID, userID, subjectID, isInitiator)
+	RespondWithJSON(w, 200, responseCard{CardID: card.CardID, ChatID: chat.ChatID, IsInitiator: isInitiator, ChatName: chatName, SubjectID: subjectForClient, Nickname: card.Nickname,
 	NotesOnSubject: card.NotesOnSubject, DisplayNameVisible: getCardWithSubjectData.DisplayNameVisible, DateOfBirthVisible: getCardWithSubjectData.DateOfBirthVisible, 
 	CityVisible: getCardWithSubjectData.CityVisible, CountryVisible: getCardWithSubjectData.CountryVisible, PhotosVisible: getCardWithSubjectData.PhotosVisible, BioVisible: getCardWithSubjectData.BioVisible, HobbiesVisible: getCardWithSubjectData.HobbiesVisible, 
 	LanguagesVisible: getCardWithSubjectData.LanguagesVisible, DisplayName: revealOrHidden(getCardWithSubjectData.DisplayNameVisible, getCardWithSubjectData.DisplayName),
@@ -737,8 +741,6 @@ func (s *state) updateNickname(w http.ResponseWriter, r *http.Request){
 	type responseCard struct {
 		CardID             uuid.UUID `json:"card_id"`
 		ChatID             uuid.UUID `json:"chat_id"`
-		CreatorID          uuid.UUID `json:"creator_id"`
-		SubjectID          uuid.UUID `json:"subject_id"`
 		Nickname           sql.NullString `json:"nickname"`
 		NotesOnSubject     sql.NullString `json:"notes_on_subject"`
 		DisplayNameVisible sql.NullBool `json:"display_name"`
@@ -752,8 +754,7 @@ func (s *state) updateNickname(w http.ResponseWriter, r *http.Request){
 		CreatedAt          time.Time `json:"created_at"`
 		UpdatedAt          time.Time `json:"updated_at"`
 	}
-	RespondWithJSON(w, 200, responseCard{CardID: updatedCard.CardID, ChatID: updatedCard.ChatID, CreatorID: updatedCard.CreatorID,         
-		SubjectID: updatedCard.SubjectID, Nickname: updatedCard.Nickname, NotesOnSubject: updatedCard.NotesOnSubject, DisplayNameVisible: updatedCard.DisplayNameVisible, DateOfBirthVisible: updatedCard.DateOfBirthVisible,
+	RespondWithJSON(w, 200, responseCard{CardID: updatedCard.CardID, ChatID: updatedCard.ChatID, Nickname: updatedCard.Nickname, NotesOnSubject: updatedCard.NotesOnSubject, DisplayNameVisible: updatedCard.DisplayNameVisible, DateOfBirthVisible: updatedCard.DateOfBirthVisible,
 		CityVisible: updatedCard.CityVisible, CountryVisible: updatedCard.CountryVisible, PhotosVisible: updatedCard.PhotosVisible, BioVisible: updatedCard.BioVisible, HobbiesVisible: updatedCard.HobbiesVisible,
 		LanguagesVisible: updatedCard.LanguagesVisible, CreatedAt: updatedCard.CreatedAt, UpdatedAt: updatedCard.UpdatedAt})
 }
@@ -836,8 +837,6 @@ func (s *state) updateNotesOnSubject(w http.ResponseWriter, r *http.Request){
 	type responseCard struct {
 		CardID             uuid.UUID `json:"card_id"`
 		ChatID             uuid.UUID `json:"chat_id"`
-		CreatorID          uuid.UUID `json:"creator_id"`
-		SubjectID          uuid.UUID `json:"subject_id"`
 		Nickname           sql.NullString `json:"nickname"`
 		NotesOnSubject     sql.NullString `json:"notes_on_subject"`
 		DisplayNameVisible sql.NullBool `json:"display_name"`
@@ -851,9 +850,9 @@ func (s *state) updateNotesOnSubject(w http.ResponseWriter, r *http.Request){
 		CreatedAt          time.Time `json:"created_at"`
 		UpdatedAt          time.Time `json:"updated_at"`
 	}
-	RespondWithJSON(w, 200, responseCard{CardID: updatedCard.CardID, ChatID: updatedCard.ChatID, CreatorID: updatedCard.CreatorID,         
-		SubjectID: updatedCard.SubjectID, Nickname: updatedCard.Nickname, NotesOnSubject: updatedCard.NotesOnSubject, DisplayNameVisible: updatedCard.DisplayNameVisible, DateOfBirthVisible: updatedCard.DateOfBirthVisible,
-		CityVisible: updatedCard.CityVisible, CountryVisible: updatedCard.CountryVisible, PhotosVisible: updatedCard.PhotosVisible, BioVisible: updatedCard.BioVisible, HobbiesVisible: updatedCard.HobbiesVisible,
+	RespondWithJSON(w, 200, responseCard{CardID: updatedCard.CardID, ChatID: updatedCard.ChatID, Nickname: updatedCard.Nickname, NotesOnSubject: updatedCard.NotesOnSubject, 
+		DisplayNameVisible: updatedCard.DisplayNameVisible, DateOfBirthVisible: updatedCard.DateOfBirthVisible, CityVisible: updatedCard.CityVisible, 
+		CountryVisible: updatedCard.CountryVisible, PhotosVisible: updatedCard.PhotosVisible, BioVisible: updatedCard.BioVisible, HobbiesVisible: updatedCard.HobbiesVisible,
 		LanguagesVisible: updatedCard.LanguagesVisible, CreatedAt: updatedCard.CreatedAt, UpdatedAt: updatedCard.UpdatedAt})
 }
 
@@ -1105,9 +1104,7 @@ func (s *state) getChats(w http.ResponseWriter, r *http.Request){
 
 	type chatResponse struct {
 		ChatID       uuid.UUID `json:"chat_id"`
-		UserOneID    uuid.UUID `json:"creator_id"`
-		UserTwoID    uuid.UUID `json:"subject_id"`
-		OtherUserID  uuid.UUID `json:"other_user_id"`
+		IsInitiator  bool      `json:"is_initiator"`
 		Nickname     string    `json:"nickname"`
 		LastMessage  string    `json:"last_message"`
 		PhotoURL     string    `json:"photo_url"`
@@ -1132,7 +1129,7 @@ func (s *state) getChats(w http.ResponseWriter, r *http.Request){
 		card, err := s.db.GetCardWithChatCreatorAndSubject(r.Context(), cardParams)
 		cardOK := err == nil
 
-		displayName := "anon-" + otherUserID.String()[:8]
+		displayName := s.anonName(chat.ChatID)
 		if err == nil && card.Nickname.Valid && card.Nickname.String != "" {
 			displayName = card.Nickname.String
 		} else if chat.UserOneID == userID {
@@ -1172,9 +1169,7 @@ func (s *state) getChats(w http.ResponseWriter, r *http.Request){
 		}
 		chatsResponse = append(chatsResponse, chatResponse{
 			ChatID:      chat.ChatID,
-			UserOneID:   chat.UserOneID,
-			UserTwoID:   chat.UserTwoID,
-			OtherUserID: otherUserID,
+			IsInitiator: chat.UserOneID == userID,
 			Nickname:    displayName,
 			LastMessage: lastMessageContent,
 			PhotoURL:    photoURL,
@@ -1432,17 +1427,10 @@ func (s *state) getActiveStories(w http.ResponseWriter, r *http.Request){
 		if story.ViewedAt.Valid {
 			viewedAt = &story.ViewedAt.Time
 		}
-		// no mostrar historias de quien me inició un chat (anónimo para mí) ni de bloqueados
+		// no mostrar historias de bloqueados
 		if story.UserID != userID {
 			blocked, err := s.isBlocked(r.Context(), userID, story.UserID)
 			if err != nil || blocked {
-				continue
-			}
-			chat, err := s.db.GetChatByUserIDs(r.Context(), database.GetChatByUserIDsParams{
-				UserOneID: userID,
-				UserTwoID: story.UserID,
-			})
-			if err == nil && chat.UserOneID == story.UserID {
 				continue
 			}
 		}
@@ -1486,15 +1474,17 @@ func (s *state) viewStory(w http.ResponseWriter, r *http.Request){
 		return
 	}
 
-	// si el dueño me es anónimo o hay bloqueo, no puedo ver ni registrar la vista
-	ok, err := s.canSeeUser(r.Context(), userID, story.UserID)
-	if err != nil {
-		RespondWithError(w, 500, "error checking permissions")
-		return
-	}
-	if !ok {
-		RespondWithError(w, 404, "Story not found")
-		return
+	// si hay bloqueo, no puedo ver ni registrar la vista
+	if story.UserID != userID {
+		blocked, err := s.isBlocked(r.Context(), userID, story.UserID)
+		if err != nil {
+			RespondWithError(w, 500, "error checking permissions")
+			return
+		}
+		if blocked {
+			RespondWithError(w, 404, "Story not found")
+			return
+		}
 	}
 	registerStoryViewParams := database.RegisterStoryViewParams{
 		StoryID:  storyID,
@@ -1612,21 +1602,36 @@ func (s *state) getBlockedUsers(w http.ResponseWriter, r *http.Request){
 		return
 	}
 	type blockResponse struct {
-		BlockerID uuid.UUID `json:"blocker_id"`
-		BlockedID uuid.UUID `json:"blocked_id"`
-		Username  string    `json:"username"`
-		CreatedAt time.Time `json:"created_at"`
+		BlockedID *uuid.UUID `json:"blocked_id,omitempty"`
+		ChatID    *uuid.UUID `json:"chat_id,omitempty"`
+		Username  string     `json:"username"`
+		CreatedAt time.Time  `json:"created_at"`
 	}
 	blockedResponse := []blockResponse{}
 	for _, b := range blockedUsers {
 		username := "usuario"
-		blockedUser, err := s.db.GetUserByID(r.Context(), b.BlockedID)
+		if u, err := s.db.GetUserByID(r.Context(), b.BlockedID); err == nil {
+			username = u.Username
+		}
+		id := b.BlockedID
+		blockedID := &id
+		var chatID *uuid.UUID
+
+		chat, err := s.db.GetChatByUserIDs(r.Context(), database.GetChatByUserIDsParams{
+			UserOneID: userID,
+			UserTwoID: b.BlockedID,
+		})
 		if err == nil {
-			username = blockedUser.Username
+			cid := chat.ChatID
+			chatID = &cid
+			if chat.UserOneID == b.BlockedID { //te inició el chat: es anónimo para vos
+				username = s.anonName(chat.ChatID)
+				blockedID = nil
+			}
 		}
 		blockedResponse = append(blockedResponse, blockResponse{
-			BlockerID: b.BlockerID,
-			BlockedID: b.BlockedID,
+			BlockedID: blockedID,
+			ChatID:    chatID,
 			Username:  username,
 			CreatedAt: b.CreatedAt,
 		})
@@ -1638,75 +1643,87 @@ type reportRequest struct {
 	Reason     string         `json:"reason"`
 	Details    string 		  `json:"details"`
 }
-func (s *state) reportUser(w http.ResponseWriter, r *http.Request){
-	defer r.Body.Close()
-
-	reportData, err := io.ReadAll(r.Body)	
-	if err != nil{
-		RespondWithError(w, 400, "couldn't read the request body")
-		return
-	}
-	
+//readReport lee y valida el cuerpo. si algo está mal, ya respondió y devuelve false.
+func readReport(w http.ResponseWriter, r *http.Request) (reportRequest, bool) {
 	var body reportRequest
-	if err := json.Unmarshal(reportData, &body); err != nil {
-        RespondWithError(w, 400, "error unmarshalling JSON")
-		return
-    }
-	//getting the content of the report that is being generated
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		RespondWithError(w, 400, "error reading JSON")
+		return body, false
+	}
 	switch body.Reason {
 	case "spam", "acoso", "contenido_inapropiado":
-		// válido, details es opcional
+		//válido, details es opcional
 	case "otro":
 		if body.Details == "" {
 			RespondWithError(w, 400, "details are required when reason is 'otro'")
-			return
+			return body, false
 		}
 	default:
 		RespondWithError(w, 400, "invalid report reason")
-		return
+		return body, false
 	}
-	//userID is the one reporting another user
-	userID, err := s.getUserIDFromContext(r)
-	if err != nil{
-		RespondWithError(w, 401, "Unauthorized")
-		return
-	}
+	return body, true
+}
 
-	reportedUserIDString := r.PathValue("userID")
-	reportedUserID, err := uuid.Parse(reportedUserIDString)
-	if err != nil {
-		RespondWithError(w, 404, "Invalid user ID")
-		return
-	}
-	createReportParams := database.CreateReportParams{
-		ReporterID: userID,
-		ReportedID: reportedUserID,
+//saveReport guarda el report y responde sin devolver ningún ID de usuario.
+func (s *state) saveReport(w http.ResponseWriter, r *http.Request, reporterID, reportedID uuid.UUID, body reportRequest) {
+	report, err := s.db.CreateReport(r.Context(), database.CreateReportParams{
+		ReporterID: reporterID,
+		ReportedID: reportedID,
 		Reason:     body.Reason,
 		Details:    sql.NullString{String: body.Details, Valid: body.Details != ""},
-	}
-	report, err := s.db.CreateReport(r.Context(), createReportParams)
+	})
 	if err != nil {
 		RespondWithError(w, 500, "couldn't create report")
 		return
 	}
-	type reportResponse struct {
-		ReportID   uuid.UUID `json:"report_id"`
-		ReporterID uuid.UUID `json:"reporter_id"`
-		ReportedID uuid.UUID `json:"reported_id"`
-		Reason     string    `json:"reason"`
-		Details    string    `json:"details"`
-		CreatedAt  time.Time `json:"created_at"`
-	}
-
-	// al final de reportUser, reemplazando el RespondWithJSON actual:
-	RespondWithJSON(w, 201, reportResponse{
-		ReportID:   report.ReportID,
-		ReporterID: report.ReporterID,
-		ReportedID: report.ReportedID,
-		Reason:     report.Reason,
-		Details:    report.Details.String,
-		CreatedAt:  report.CreatedAt,
+	RespondWithJSON(w, 201, map[string]any{
+		"report_id":  report.ReportID,
+		"created_at": report.CreatedAt,
 	})
+}
+
+func (s *state) reportUser(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	userID, err := s.getUserIDFromContext(r)
+	if err != nil {
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
+	reportedUserID, err := uuid.Parse(r.PathValue("userID"))
+	if err != nil {
+		RespondWithError(w, 404, "Invalid user ID")
+		return
+	}
+	body, ok := readReport(w, r)
+	if !ok {
+		return
+	}
+	s.saveReport(w, r, userID, reportedUserID, body)
+}
+
+func (s *state) reportChat(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	userID, err := s.getUserIDFromContext(r)
+	if err != nil {
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
+	chatID, err := uuid.Parse(r.PathValue("chatID"))
+	if err != nil {
+		RespondWithError(w, 404, "Invalid chat ID")
+		return
+	}
+	otherID, err := s.otherParticipant(r.Context(), chatID, userID)
+	if err != nil {
+		respondChatError(w, err)
+		return
+	}
+	body, ok := readReport(w, r)
+	if !ok {
+		return
+	}
+	s.saveReport(w, r, userID, otherID, body)
 }
 
 func (s *state) getPublicProfile(w http.ResponseWriter, r *http.Request) {
@@ -1731,20 +1748,6 @@ func (s *state) getPublicProfile(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if blocked {
-			RespondWithError(w, 403, "profile not available")
-			return
-		}
-
-		// si el dueño del perfil inició un chat conmigo, es anónimo para mí
-		chat, err := s.db.GetChatByUserIDs(r.Context(), database.GetChatByUserIDsParams{
-			UserOneID: requesterID,
-			UserTwoID: userID,
-		})
-		if err != nil && err != sql.ErrNoRows {
-			RespondWithError(w, 500, "error checking chat")
-			return
-		}
-		if err == nil && chat.UserOneID == userID {
 			RespondWithError(w, 403, "profile not available")
 			return
 		}
@@ -1895,7 +1898,7 @@ func (s *state) getStoryViewers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	type viewerResponse struct {
-		ViewerID uuid.UUID `json:"viewer_id"`
+		ViewerID *uuid.UUID `json:"viewer_id,omitempty"`
 		Username string    `json:"username"`
 		ViewedAt time.Time `json:"viewed_at"`
 	}
@@ -1905,15 +1908,18 @@ func (s *state) getStoryViewers(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		name := v.Username
+		id := v.ViewerID
+		viewerID := &id
 		chat, err := s.db.GetChatByUserIDs(r.Context(), database.GetChatByUserIDsParams{
 			UserOneID: userID,
 			UserTwoID: v.ViewerID,
 		})
 		if err == nil && chat.UserOneID == v.ViewerID {
-			name = "anon-" + v.ViewerID.String()[:8]
+			name = s.anonName(chat.ChatID)
+			viewerID = nil //espectador anónimo, no se devuelve su ID
 		}
 		viewersResponse = append(viewersResponse, viewerResponse{
-			ViewerID: v.ViewerID,
+			ViewerID: viewerID,
 			Username: name,
 			ViewedAt: v.ViewedAt,
 		})
@@ -2229,6 +2235,59 @@ func (s *state) deletePushToken(w http.ResponseWriter, r *http.Request) {
 	}
 	RespondWithJSON(w, 200, map[string]string{"status": "success"})
 }
+func (s *state) blockChat(w http.ResponseWriter, r *http.Request) {
+	userID, err := s.getUserIDFromContext(r)
+	if err != nil {
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
+	chatID, err := uuid.Parse(r.PathValue("chatID"))
+	if err != nil {
+		RespondWithError(w, 404, "Invalid chat ID")
+		return
+	}
+	otherID, err := s.otherParticipant(r.Context(), chatID, userID)
+	if err != nil {
+		respondChatError(w, err)
+		return
+	}
+	_, err = s.db.CreateBlock(r.Context(), database.CreateBlockParams{
+		BlockerID: userID,
+		BlockedID: otherID,
+	})
+	if err != nil {
+		RespondWithError(w, 500, "couldn't block user")
+		return
+	}
+	RespondWithJSON(w, 200, map[string]interface{}{"status": "success"})
+}
+
+func (s *state) unblockChat(w http.ResponseWriter, r *http.Request) {
+	userID, err := s.getUserIDFromContext(r)
+	if err != nil {
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
+	chatID, err := uuid.Parse(r.PathValue("chatID"))
+	if err != nil {
+		RespondWithError(w, 404, "Invalid chat ID")
+		return
+	}
+	otherID, err := s.otherParticipant(r.Context(), chatID, userID)
+	if err != nil {
+		respondChatError(w, err)
+		return
+	}
+	err = s.db.DeleteBlockByBlockerAndBlockedID(r.Context(), database.DeleteBlockByBlockerAndBlockedIDParams{
+		BlockerID: userID,
+		BlockedID: otherID,
+	})
+	if err != nil {
+		RespondWithError(w, 500, "couldn't unblock user")
+		return
+	}
+	RespondWithJSON(w, 200, map[string]interface{}{"status": "success"})
+}
 
 //el state es el receiver, (el objeto que está ejecutando el método)
 //cuando handlers() escribe s.register, ese s es el mismo que le llegó a handlers(),  necesita recibir la instancia de alguna manera 
@@ -2293,6 +2352,10 @@ func (s *state) handlers() {
 
 	http.Handle("POST /me/push-token", s.authMiddleware(http.HandlerFunc(s.savePushToken)))
 	http.Handle("DELETE /me/push-token", s.authMiddleware(http.HandlerFunc(s.deletePushToken)))
+
+	http.Handle("POST /chats/{chatID}/block", s.authMiddleware(http.HandlerFunc(s.blockChat)))
+	http.Handle("DELETE /chats/{chatID}/block", s.authMiddleware(http.HandlerFunc(s.unblockChat)))
+	http.Handle("POST /chats/{chatID}/report", s.authMiddleware(http.HandlerFunc(s.reportChat)))
 }
 
 

@@ -115,7 +115,7 @@ func (s *state) displayNameFor(ctx context.Context, chatID, viewerID, otherID uu
 			return u.Username
 		}
 	}
-	return "anon-" + otherID.String()[:8]
+	return s.anonName(chatID)
 }
 
 func truncate(text string, n int) string {

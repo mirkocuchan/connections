@@ -13,6 +13,9 @@ import(
     "path/filepath"
     "log"
     "fmt"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
     "context"
     "github.com/mirkocuchan/connections/internal/database"
 )
@@ -270,4 +273,36 @@ func escapeLike(s string) string {
 	s = strings.ReplaceAll(s, `%`, `\%`)
 	s = strings.ReplaceAll(s, `_`, `\_`)
 	return s
+}
+
+//anonName devuelve el alias que ve el receptor de un chat. depende del chat y de una clave del servidor, no de ningún ID de usuario.
+func (s *state) anonName(chatID uuid.UUID) string {
+	mac := hmac.New(sha256.New, []byte(s.cfg.JWTSecret))
+	mac.Write([]byte("anon-name:" + chatID.String()))
+	return "anon-" + hex.EncodeToString(mac.Sum(nil))[:8]
+}
+
+var errNotParticipant = errors.New("not a participant of this chat")
+
+//otherParticipant devuelve el ID del otro participante del chat.
+func (s *state) otherParticipant(ctx context.Context, chatID, userID uuid.UUID) (uuid.UUID, error) {
+	chat, err := s.db.GetChatByID(ctx, chatID)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	switch userID {
+	case chat.UserOneID:
+		return chat.UserTwoID, nil
+	case chat.UserTwoID:
+		return chat.UserOneID, nil
+	}
+	return uuid.Nil, errNotParticipant
+}
+
+func respondChatError(w http.ResponseWriter, err error) {
+	if errors.Is(err, errNotParticipant) {
+		RespondWithError(w, 403, "you are not a participant of this chat")
+		return
+	}
+	RespondWithError(w, 404, "Chat not found")
 }
