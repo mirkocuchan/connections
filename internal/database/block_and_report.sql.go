@@ -8,9 +8,21 @@ package database
 import (
 	"context"
 	"database/sql"
+	"time"
 
 	"github.com/google/uuid"
 )
+
+const countRecentReportsByReporter = `-- name: CountRecentReportsByReporter :one
+SELECT COUNT(*) FROM reports WHERE reporter_id = $1::uuid AND created_at > now() - interval '1 hour'
+`
+
+func (q *Queries) CountRecentReportsByReporter(ctx context.Context, reporterID uuid.UUID) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countRecentReportsByReporter, reporterID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
 
 const createBlock = `-- name: CreateBlock :one
 INSERT INTO blocks (blocker_id, blocked_id)
@@ -34,27 +46,33 @@ func (q *Queries) CreateBlock(ctx context.Context, arg CreateBlockParams) (Block
 }
 
 const createReport = `-- name: CreateReport :one
-INSERT INTO reports (reporter_id, reported_id, reason, details)
+INSERT INTO reports (reporter_id, reported_id, chat_id, reported_username, reason, details)
 VALUES (
     $1,
     $2,
     $3,
-    $4
+    $4,
+    $5,
+    $6
 )
-RETURNING report_id, reporter_id, reported_id, reason, details, created_at
+RETURNING report_id, reporter_id, reported_id, reason, details, created_at, chat_id, reported_username, status, reviewed_at
 `
 
 type CreateReportParams struct {
-	ReporterID uuid.UUID
-	ReportedID uuid.UUID
-	Reason     string
-	Details    sql.NullString
+	ReporterID       uuid.NullUUID
+	ReportedID       uuid.NullUUID
+	ChatID           uuid.NullUUID
+	ReportedUsername sql.NullString
+	Reason           string
+	Details          sql.NullString
 }
 
 func (q *Queries) CreateReport(ctx context.Context, arg CreateReportParams) (Report, error) {
 	row := q.db.QueryRowContext(ctx, createReport,
 		arg.ReporterID,
 		arg.ReportedID,
+		arg.ChatID,
+		arg.ReportedUsername,
 		arg.Reason,
 		arg.Details,
 	)
@@ -66,6 +84,85 @@ func (q *Queries) CreateReport(ctx context.Context, arg CreateReportParams) (Rep
 		&i.Reason,
 		&i.Details,
 		&i.CreatedAt,
+		&i.ChatID,
+		&i.ReportedUsername,
+		&i.Status,
+		&i.ReviewedAt,
+	)
+	return i, err
+}
+
+const createReportWithEvidence = `-- name: CreateReportWithEvidence :one
+WITH new_report AS (INSERT INTO reports (reporter_id, reported_id, chat_id, reported_username, reason, details)
+    VALUES ( 
+        $1::uuid,
+        $2::uuid,
+        $3::uuid,
+        $4::text,
+        $5::text,
+        $6::text
+    )
+    RETURNING report_id, reporter_id, reported_id, reason, details, created_at, chat_id, reported_username, status, reviewed_at
+), copied_messages AS (INSERT INTO report_messages (report_id, author_role, content, sent_at)
+    SELECT
+        (SELECT report_id FROM new_report),
+        CASE WHEN m.sender_id = $1::uuid THEN 'reporter' ELSE 'reported' END,
+        m.content,
+        m.created_at
+    FROM (
+        SELECT sender_id, content, created_at
+        FROM messages
+        WHERE chat_id = $3::uuid
+        ORDER BY created_at DESC
+        LIMIT 20
+    ) m
+)
+SELECT report_id, reporter_id, reported_id, reason, details, created_at, chat_id, reported_username, status, reviewed_at FROM new_report
+`
+
+type CreateReportWithEvidenceParams struct {
+	ReporterID       uuid.UUID
+	ReportedID       uuid.UUID
+	ChatID           uuid.NullUUID
+	ReportedUsername string
+	Reason           string
+	Details          sql.NullString
+}
+
+type CreateReportWithEvidenceRow struct {
+	ReportID         uuid.UUID
+	ReporterID       uuid.NullUUID
+	ReportedID       uuid.NullUUID
+	Reason           string
+	Details          sql.NullString
+	CreatedAt        time.Time
+	ChatID           uuid.NullUUID
+	ReportedUsername sql.NullString
+	Status           string
+	ReviewedAt       sql.NullTime
+}
+
+func (q *Queries) CreateReportWithEvidence(ctx context.Context, arg CreateReportWithEvidenceParams) (CreateReportWithEvidenceRow, error) {
+	row := q.db.QueryRowContext(ctx, createReportWithEvidence,
+		arg.ReporterID,
+		arg.ReportedID,
+		arg.ChatID,
+		arg.ReportedUsername,
+		arg.Reason,
+		arg.Details,
+	)
+	var i CreateReportWithEvidenceRow
+	err := row.Scan(
+		&i.ReportID,
+		&i.ReporterID,
+		&i.ReportedID,
+		&i.Reason,
+		&i.Details,
+		&i.CreatedAt,
+		&i.ChatID,
+		&i.ReportedUsername,
+		&i.Status,
+		&i.ReviewedAt,
 	)
 	return i, err
 }
@@ -114,6 +211,27 @@ func (q *Queries) ExistsBlockByBlocker(ctx context.Context, arg ExistsBlockByBlo
 	var column_1 int32
 	err := row.Scan(&column_1)
 	return column_1, err
+}
+
+const existsRecentReport = `-- name: ExistsRecentReport :one
+SELECT EXISTS (SELECT 1 FROM reports WHERE reporter_id = $1::uuid
+      AND reported_id = $2::uuid
+      AND reason = $3::text
+      AND created_at > now() - interval '24 hours'
+)
+`
+
+type ExistsRecentReportParams struct {
+	ReporterID uuid.UUID
+	ReportedID uuid.UUID
+	Reason     string
+}
+
+func (q *Queries) ExistsRecentReport(ctx context.Context, arg ExistsRecentReportParams) (bool, error) {
+	row := q.db.QueryRowContext(ctx, existsRecentReport, arg.ReporterID, arg.ReportedID, arg.Reason)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }
 
 const getBlocksByBlockerID = `-- name: GetBlocksByBlockerID :many

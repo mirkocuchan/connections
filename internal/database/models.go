@@ -45,12 +45,14 @@ type Chat struct {
 }
 
 type Message struct {
-	MessageID uuid.UUID
-	ChatID    uuid.UUID
-	SenderID  uuid.UUID
-	Content   string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	MessageID    uuid.UUID
+	ChatID       uuid.UUID
+	SenderID     uuid.UUID
+	Content      string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+	StoryID      uuid.NullUUID
+	IsStoryReply bool
 }
 
 type PushToken struct {
@@ -70,12 +72,24 @@ type RefreshToken struct {
 }
 
 type Report struct {
-	ReportID   uuid.UUID
-	ReporterID uuid.UUID
-	ReportedID uuid.UUID
-	Reason     string
-	Details    sql.NullString
-	CreatedAt  time.Time
+	ReportID         uuid.UUID
+	ReporterID       uuid.NullUUID
+	ReportedID       uuid.NullUUID
+	Reason           string
+	Details          sql.NullString
+	CreatedAt        time.Time
+	ChatID           uuid.NullUUID
+	ReportedUsername sql.NullString
+	Status           string
+	ReviewedAt       sql.NullTime
+}
+
+type ReportMessage struct {
+	ReportMessageID uuid.UUID
+	ReportID        uuid.UUID
+	AuthorRole      string
+	Content         string
+	SentAt          time.Time
 }
 
 type Story struct {
@@ -109,6 +123,7 @@ type User struct {
 	Languages       sql.NullString
 	DetectedCountry sql.NullString
 	GlobalDiscovery bool
+	PushMode        string
 }
 
 type UserPhoto struct {

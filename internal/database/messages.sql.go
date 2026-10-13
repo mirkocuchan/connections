@@ -7,6 +7,8 @@ package database
 
 import (
 	"context"
+	"database/sql"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -18,7 +20,7 @@ VALUES (
     $2,
     $3
 )
-RETURNING message_id, chat_id, sender_id, content, created_at, updated_at
+RETURNING message_id, chat_id, sender_id, content, created_at, updated_at, story_id, is_story_reply
 `
 
 type CreateMessageParams struct {
@@ -37,6 +39,48 @@ func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) (M
 		&i.Content,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.StoryID,
+		&i.IsStoryReply,
+	)
+	return i, err
+}
+
+const createStoryReplyMessage = `-- name: CreateStoryReplyMessage :one
+INSERT INTO messages (chat_id, sender_id, content, story_id, is_story_reply)
+VALUES (
+    $1, 
+    $2, 
+    $3,
+    $4,
+    true
+)
+RETURNING message_id, chat_id, sender_id, content, created_at, updated_at, story_id, is_story_reply
+`
+
+type CreateStoryReplyMessageParams struct {
+	ChatID   uuid.UUID
+	SenderID uuid.UUID
+	Content  string
+	StoryID  uuid.NullUUID
+}
+
+func (q *Queries) CreateStoryReplyMessage(ctx context.Context, arg CreateStoryReplyMessageParams) (Message, error) {
+	row := q.db.QueryRowContext(ctx, createStoryReplyMessage,
+		arg.ChatID,
+		arg.SenderID,
+		arg.Content,
+		arg.StoryID,
+	)
+	var i Message
+	err := row.Scan(
+		&i.MessageID,
+		&i.ChatID,
+		&i.SenderID,
+		&i.Content,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.StoryID,
+		&i.IsStoryReply,
 	)
 	return i, err
 }
@@ -51,7 +95,7 @@ func (q *Queries) DeleteMessageByID(ctx context.Context, messageID uuid.UUID) er
 }
 
 const getLastMessageByChatID = `-- name: GetLastMessageByChatID :one
-SELECT message_id, chat_id, sender_id, content, created_at, updated_at FROM messages WHERE chat_id = $1 ORDER BY created_at DESC LIMIT 1
+SELECT message_id, chat_id, sender_id, content, created_at, updated_at, story_id, is_story_reply FROM messages WHERE chat_id = $1 ORDER BY created_at DESC LIMIT 1
 `
 
 func (q *Queries) GetLastMessageByChatID(ctx context.Context, chatID uuid.UUID) (Message, error) {
@@ -64,12 +108,14 @@ func (q *Queries) GetLastMessageByChatID(ctx context.Context, chatID uuid.UUID) 
 		&i.Content,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.StoryID,
+		&i.IsStoryReply,
 	)
 	return i, err
 }
 
 const getMessageByID = `-- name: GetMessageByID :one
-SELECT message_id, chat_id, sender_id, content, created_at, updated_at FROM messages WHERE message_id = $1
+SELECT message_id, chat_id, sender_id, content, created_at, updated_at, story_id, is_story_reply FROM messages WHERE message_id = $1
 `
 
 func (q *Queries) GetMessageByID(ctx context.Context, messageID uuid.UUID) (Message, error) {
@@ -82,23 +128,44 @@ func (q *Queries) GetMessageByID(ctx context.Context, messageID uuid.UUID) (Mess
 		&i.Content,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.StoryID,
+		&i.IsStoryReply,
 	)
 	return i, err
 }
 
 const getMessagesByChatID = `-- name: GetMessagesByChatID :many
-SELECT message_id, chat_id, sender_id, content, created_at, updated_at FROM messages WHERE chat_id = $1 ORDER BY created_at ASC
+SELECT m.message_id, m.chat_id, m.sender_id, m.content, m.created_at, m.updated_at, m.story_id, m.is_story_reply, s.media_url AS story_media_url, s.media_type AS story_media_type
+FROM messages m
+LEFT JOIN stories s
+       ON s.story_id = m.story_id
+      AND s.expires_at > (now() at time zone 'utc')
+WHERE m.chat_id = $1
+ORDER BY m.created_at ASC
 `
 
-func (q *Queries) GetMessagesByChatID(ctx context.Context, chatID uuid.UUID) ([]Message, error) {
+type GetMessagesByChatIDRow struct {
+	MessageID      uuid.UUID
+	ChatID         uuid.UUID
+	SenderID       uuid.UUID
+	Content        string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	StoryID        uuid.NullUUID
+	IsStoryReply   bool
+	StoryMediaUrl  sql.NullString
+	StoryMediaType sql.NullString
+}
+
+func (q *Queries) GetMessagesByChatID(ctx context.Context, chatID uuid.UUID) ([]GetMessagesByChatIDRow, error) {
 	rows, err := q.db.QueryContext(ctx, getMessagesByChatID, chatID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Message
+	var items []GetMessagesByChatIDRow
 	for rows.Next() {
-		var i Message
+		var i GetMessagesByChatIDRow
 		if err := rows.Scan(
 			&i.MessageID,
 			&i.ChatID,
@@ -106,6 +173,10 @@ func (q *Queries) GetMessagesByChatID(ctx context.Context, chatID uuid.UUID) ([]
 			&i.Content,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.StoryID,
+			&i.IsStoryReply,
+			&i.StoryMediaUrl,
+			&i.StoryMediaType,
 		); err != nil {
 			return nil, err
 		}
@@ -121,7 +192,7 @@ func (q *Queries) GetMessagesByChatID(ctx context.Context, chatID uuid.UUID) ([]
 }
 
 const getMessagesBySenderID = `-- name: GetMessagesBySenderID :many
-SELECT message_id, chat_id, sender_id, content, created_at, updated_at FROM messages WHERE sender_id = $1 ORDER BY created_at ASC
+SELECT message_id, chat_id, sender_id, content, created_at, updated_at, story_id, is_story_reply FROM messages WHERE sender_id = $1 ORDER BY created_at ASC
 `
 
 func (q *Queries) GetMessagesBySenderID(ctx context.Context, senderID uuid.UUID) ([]Message, error) {
@@ -140,6 +211,8 @@ func (q *Queries) GetMessagesBySenderID(ctx context.Context, senderID uuid.UUID)
 			&i.Content,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.StoryID,
+			&i.IsStoryReply,
 		); err != nil {
 			return nil, err
 		}

@@ -34,6 +34,17 @@ func (q *Queries) DeletePushTokenForUser(ctx context.Context, arg DeletePushToke
 	return err
 }
 
+const getPushMode = `-- name: GetPushMode :one
+SELECT push_mode FROM users WHERE user_id = $1
+`
+
+func (q *Queries) GetPushMode(ctx context.Context, userID uuid.UUID) (string, error) {
+	row := q.db.QueryRowContext(ctx, getPushMode, userID)
+	var push_mode string
+	err := row.Scan(&push_mode)
+	return push_mode, err
+}
+
 const getPushTokensByUserID = `-- name: GetPushTokensByUserID :many
 SELECT token FROM push_tokens WHERE user_id = $1
 `
@@ -59,6 +70,20 @@ func (q *Queries) GetPushTokensByUserID(ctx context.Context, userID uuid.UUID) (
 		return nil, err
 	}
 	return items, nil
+}
+
+const updatePushMode = `-- name: UpdatePushMode :exec
+UPDATE users SET push_mode = $2 WHERE user_id = $1
+`
+
+type UpdatePushModeParams struct {
+	UserID   uuid.UUID
+	PushMode string
+}
+
+func (q *Queries) UpdatePushMode(ctx context.Context, arg UpdatePushModeParams) error {
+	_, err := q.db.ExecContext(ctx, updatePushMode, arg.UserID, arg.PushMode)
+	return err
 }
 
 const upsertPushToken = `-- name: UpsertPushToken :exec

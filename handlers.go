@@ -420,9 +420,19 @@ func (s *state) getMessages(w http.ResponseWriter, r *http.Request){
 		Content   string    `json:"content"`
 		CreatedAt time.Time `json:"created_at"`
 		UpdatedAt time.Time `json:"updated_at"`
+		IsStoryReply   bool      `json:"is_story_reply"`
+		StoryMediaURL  *string   `json:"story_media_url,omitempty"`
+		StoryMediaType *string   `json:"story_media_type,omitempty"`
 	}
 	messagesResponse := []messageResponse{}
 	for _, message := range messages {
+		var storyURL, storyType *string
+		if message.StoryMediaUrl.Valid {
+			u := absoluteURL(r, message.StoryMediaUrl.String)
+			t := message.StoryMediaType.String
+			storyURL = &u
+			storyType = &t
+		}
 		messagesResponse = append(messagesResponse, messageResponse{
 			MessageID: message.MessageID,
 			ChatID:    message.ChatID,
@@ -430,6 +440,9 @@ func (s *state) getMessages(w http.ResponseWriter, r *http.Request){
 			Content:   message.Content,
 			CreatedAt: message.CreatedAt,
 			UpdatedAt: message.UpdatedAt,
+			IsStoryReply:   message.IsStoryReply,
+			StoryMediaURL:  storyURL,
+			StoryMediaType: storyType,
 		})
 	}
 	RespondWithJSON(w, 200, messagesResponse)
@@ -1664,14 +1677,50 @@ func readReport(w http.ResponseWriter, r *http.Request) (reportRequest, bool) {
 	}
 	return body, true
 }
-
+const maxReportsPerHour = 10
 //saveReport guarda el report y responde sin devolver ningún ID de usuario.
-func (s *state) saveReport(w http.ResponseWriter, r *http.Request, reporterID, reportedID uuid.UUID, body reportRequest) {
-	report, err := s.db.CreateReport(r.Context(), database.CreateReportParams{
+func (s *state) saveReport(w http.ResponseWriter, r *http.Request, reporterID, reportedID uuid.UUID, chatID *uuid.UUID, body reportRequest) {
+	reported, err := s.db.GetUserByID(r.Context(), reportedID)
+	if err != nil {
+		RespondWithError(w, 404, "User not found")
+		return
+	}
+
+	var chatParam uuid.NullUUID
+	if chatID != nil {
+		chatParam = uuid.NullUUID{UUID: *chatID, Valid: true}
+	}
+	//checkeo si el usuario ya hizo demasiados reportes en la última hora y si el usuario ya reportó al mismo usuario por la misma razón en el último tiempo
+	recent, err := s.db.CountRecentReportsByReporter(r.Context(), reporterID)
+	if err != nil {
+		RespondWithError(w, 500, "couldn't check report limits")
+		return
+	}
+	if recent >= maxReportsPerHour {
+		RespondWithError(w, 429, "too many reports, try again later")
+		return
+	}
+
+	alreadyReported, err := s.db.ExistsRecentReport(r.Context(), database.ExistsRecentReportParams{
 		ReporterID: reporterID,
 		ReportedID: reportedID,
 		Reason:     body.Reason,
-		Details:    sql.NullString{String: body.Details, Valid: body.Details != ""},
+	})
+	if err != nil {
+		RespondWithError(w, 500, "couldn't check duplicate reports")
+		return
+	}
+	if alreadyReported {
+		RespondWithError(w, 409, "you already reported this user for this reason recently")
+		return
+	}
+	report, err := s.db.CreateReportWithEvidence(r.Context(), database.CreateReportWithEvidenceParams{
+		ReporterID:       reporterID,
+		ReportedID:       reportedID,
+		ChatID:           chatParam,
+		ReportedUsername: reported.Username,
+		Reason:           body.Reason,
+		Details:          sql.NullString{String: body.Details, Valid: body.Details != ""},
 	})
 	if err != nil {
 		RespondWithError(w, 500, "couldn't create report")
@@ -1699,7 +1748,7 @@ func (s *state) reportUser(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	s.saveReport(w, r, userID, reportedUserID, body)
+	s.saveReport(w, r, userID, reportedUserID, nil, body)
 }
 
 func (s *state) reportChat(w http.ResponseWriter, r *http.Request) {
@@ -1723,7 +1772,7 @@ func (s *state) reportChat(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	s.saveReport(w, r, userID, otherID, body)
+	s.saveReport(w, r, userID, otherID, &chatID, body)
 }
 
 func (s *state) getPublicProfile(w http.ResponseWriter, r *http.Request) {
@@ -2235,6 +2284,51 @@ func (s *state) deletePushToken(w http.ResponseWriter, r *http.Request) {
 	}
 	RespondWithJSON(w, 200, map[string]string{"status": "success"})
 }
+func (s *state) getPushMode(w http.ResponseWriter, r *http.Request) {
+	userID, err := s.getUserIDFromContext(r)
+	if err != nil {
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
+	mode, err := s.db.GetPushMode(r.Context(), userID)
+	if err != nil {
+		RespondWithError(w, 500, "couldn't get notification settings")
+		return
+	}
+	RespondWithJSON(w, 200, map[string]string{"mode": mode})
+}
+
+func (s *state) setPushMode(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	userID, err := s.getUserIDFromContext(r)
+	if err != nil {
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
+	var body struct {
+		Mode string `json:"mode"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		RespondWithError(w, 400, "error reading JSON")
+		return
+	}
+	switch body.Mode {
+	case "off", "name", "full":
+	default:
+		RespondWithError(w, 400, "invalid mode")
+		return
+	}
+	err = s.db.UpdatePushMode(r.Context(), database.UpdatePushModeParams{
+		UserID:   userID,
+		PushMode: body.Mode,
+	})
+	if err != nil {
+		RespondWithError(w, 500, "couldn't update notification settings")
+		return
+	}
+	RespondWithJSON(w, 200, map[string]string{"mode": body.Mode})
+}
+
 func (s *state) blockChat(w http.ResponseWriter, r *http.Request) {
 	userID, err := s.getUserIDFromContext(r)
 	if err != nil {
@@ -2289,6 +2383,72 @@ func (s *state) unblockChat(w http.ResponseWriter, r *http.Request) {
 	RespondWithJSON(w, 200, map[string]interface{}{"status": "success"})
 }
 
+type storyReplyRequest struct {
+	Content string `json:"content"`
+}
+
+func (s *state) replyToStory(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	userID, err := s.getUserIDFromContext(r)
+	if err != nil {
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
+
+	storyID, err := uuid.Parse(r.PathValue("storyID"))
+	if err != nil {
+		RespondWithError(w, 404, "Invalid story ID")
+		return
+	}
+	var body storyReplyRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		RespondWithError(w, 400, "error reading JSON")
+		return
+	}
+	content := strings.TrimSpace(body.Content)
+	if content == "" {
+		RespondWithError(w, 400, "message can't be empty")
+		return
+	}
+
+	story, err := s.db.GetStoryByID(r.Context(), storyID)
+	if err != nil || time.Now().UTC().After(story.ExpiresAt) {
+		RespondWithError(w, 404, "Story not found")
+		return
+	}
+	if story.UserID == userID {
+		RespondWithError(w, 403, "Can't reply to your own story")
+		return
+	}
+	blocked, err := s.isBlocked(r.Context(), userID, story.UserID)
+	if err != nil {
+		RespondWithError(w, 500, "error checking block status")
+		return
+	}
+	if blocked {
+		RespondWithError(w, 403, "Can't reply to this story")
+		return
+	}
+	
+	chat, err := s.getOrCreateChat(r.Context(), userID, story.UserID)
+	if err != nil {
+		RespondWithError(w, 500, "couldn't get or create the chat")
+		return
+	}
+	message, err := s.db.CreateStoryReplyMessage(r.Context(), database.CreateStoryReplyMessageParams{
+		ChatID:   chat.ChatID,
+		SenderID: userID,
+		Content:  content,
+		StoryID:  uuid.NullUUID{UUID: storyID, Valid: true},
+	})
+	if err != nil {
+		RespondWithError(w, 500, "couldn't create the message")
+		return
+	}
+
+	go s.notifyNewMessage(chat.ChatID, userID, story.UserID, chat.UserOneID == story.UserID, "Respondió a tu historia: "+content)
+	RespondWithJSON(w, 201, map[string]any{"chat_id":    chat.ChatID,"message_id": message.MessageID,})
+}
 //el state es el receiver, (el objeto que está ejecutando el método)
 //cuando handlers() escribe s.register, ese s es el mismo que le llegó a handlers(),  necesita recibir la instancia de alguna manera 
 func (s *state) handlers() {
@@ -2352,10 +2512,14 @@ func (s *state) handlers() {
 
 	http.Handle("POST /me/push-token", s.authMiddleware(http.HandlerFunc(s.savePushToken)))
 	http.Handle("DELETE /me/push-token", s.authMiddleware(http.HandlerFunc(s.deletePushToken)))
+	http.Handle("GET /me/push-mode", s.authMiddleware(http.HandlerFunc(s.getPushMode)))
+	http.Handle("PATCH /me/push-mode", s.authMiddleware(http.HandlerFunc(s.setPushMode)))
 
 	http.Handle("POST /chats/{chatID}/block", s.authMiddleware(http.HandlerFunc(s.blockChat)))
 	http.Handle("DELETE /chats/{chatID}/block", s.authMiddleware(http.HandlerFunc(s.unblockChat)))
 	http.Handle("POST /chats/{chatID}/report", s.authMiddleware(http.HandlerFunc(s.reportChat)))
+
+	http.Handle("POST /stories/{storyID}/reply", s.authMiddleware(http.HandlerFunc(s.replyToStory)))
 }
 
 

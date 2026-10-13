@@ -129,11 +129,20 @@ func truncate(text string, n int) string {
 //notifyNewMessage corre entera en una goroutine: calcula el título y manda el push.
 func (s *state) notifyNewMessage(chatID, senderID, recipientID uuid.UUID, recipientIsInitiator bool, content string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	title := s.displayNameFor(ctx, chatID, recipientID, senderID, recipientIsInitiator)
-	cancel()
+	defer cancel()
+	mode, err := s.db.GetPushMode(ctx, recipientID)
+	if err != nil || mode == "off" {
+		return
+	}
 
-	s.sendPush(recipientID, title, truncate(content, 100), map[string]any{
+	name := s.displayNameFor(ctx, chatID, recipientID, senderID, recipientIsInitiator)
+	body := "Te envió un mensaje nuevo"
+	if mode == "full" {
+		body = truncate(content, 100)
+	}
+	
+	s.sendPush(recipientID, name, body, map[string]any{
 		"chat_id": chatID.String(),
-		"name":    title,
+		"name":    name,
 	})
 }

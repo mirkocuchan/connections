@@ -15,3 +15,9 @@ DELETE FROM push_tokens WHERE token = $1;
 
 -- name: DeletePushTokenForUser :exec
 DELETE FROM push_tokens WHERE token = $1 AND user_id = $2;
+
+-- name: GetPushMode :one
+SELECT push_mode FROM users WHERE user_id = $1;
+
+-- name: UpdatePushMode :exec
+UPDATE users SET push_mode = $2 WHERE user_id = $1;

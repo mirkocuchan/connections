@@ -21,7 +21,7 @@ VALUES (
     $3,
     $4
 )
-RETURNING user_id, username, email, password_hash, date_of_birth, created_at, updated_at, display_name, bio, city, country, hobbies, languages, detected_country, global_discovery
+RETURNING user_id, username, email, password_hash, date_of_birth, created_at, updated_at, display_name, bio, city, country, hobbies, languages, detected_country, global_discovery, push_mode
 `
 
 type CreateUserParams struct {
@@ -55,6 +55,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.Languages,
 		&i.DetectedCountry,
 		&i.GlobalDiscovery,
+		&i.PushMode,
 	)
 	return i, err
 }
@@ -69,7 +70,7 @@ func (q *Queries) DeleteUser(ctx context.Context, userID uuid.UUID) error {
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT user_id, username, email, password_hash, date_of_birth, created_at, updated_at, display_name, bio, city, country, hobbies, languages, detected_country, global_discovery FROM users WHERE email = $1
+SELECT user_id, username, email, password_hash, date_of_birth, created_at, updated_at, display_name, bio, city, country, hobbies, languages, detected_country, global_discovery, push_mode FROM users WHERE email = $1
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
@@ -91,12 +92,13 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.Languages,
 		&i.DetectedCountry,
 		&i.GlobalDiscovery,
+		&i.PushMode,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT user_id, username, email, password_hash, date_of_birth, created_at, updated_at, display_name, bio, city, country, hobbies, languages, detected_country, global_discovery FROM users WHERE user_id = $1
+SELECT user_id, username, email, password_hash, date_of_birth, created_at, updated_at, display_name, bio, city, country, hobbies, languages, detected_country, global_discovery, push_mode FROM users WHERE user_id = $1
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, userID uuid.UUID) (User, error) {
@@ -118,6 +120,7 @@ func (q *Queries) GetUserByID(ctx context.Context, userID uuid.UUID) (User, erro
 		&i.Languages,
 		&i.DetectedCountry,
 		&i.GlobalDiscovery,
+		&i.PushMode,
 	)
 	return i, err
 }
@@ -171,7 +174,7 @@ UPDATE users SET
     languages    = COALESCE($6, languages),
     updated_at   = NOW()
 WHERE user_id = $7
-RETURNING user_id, username, email, password_hash, date_of_birth, created_at, updated_at, display_name, bio, city, country, hobbies, languages, detected_country, global_discovery
+RETURNING user_id, username, email, password_hash, date_of_birth, created_at, updated_at, display_name, bio, city, country, hobbies, languages, detected_country, global_discovery, push_mode
 `
 
 type UpdateUserParams struct {
@@ -211,6 +214,7 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, e
 		&i.Languages,
 		&i.DetectedCountry,
 		&i.GlobalDiscovery,
+		&i.PushMode,
 	)
 	return i, err
 }
