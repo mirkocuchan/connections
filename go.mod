@@ -9,6 +9,7 @@ require (
 
 require (
 	github.com/alexedwards/argon2id v1.0.0 // indirect
+	github.com/coder/websocket v1.8.15 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/joho/godotenv v1.5.1 // indirect
 	golang.org/x/crypto v0.14.0 // indirect
