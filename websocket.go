@@ -21,7 +21,7 @@ type client struct {
 
 //hub = quién está conectado. userID -> conjunto de conexiones (un usuario puede tener más de una a la vez). ej: userID de Mirko  →  { conexión del iPhone, conexión de otra pestaña }
 type hub struct {
-	mu      sync.RWMutex //protege el canal send de accesos concurrentes
+	mu      sync.RWMutex //protege el mapa clients 
 	clients map[uuid.UUID]map[*client]struct{}
 }
 
@@ -53,7 +53,8 @@ func (h *hub) sendToUser(userID uuid.UUID, event any) {
 	if err != nil {
 		return
 	}
-	h.mu.RLock() //mandar al mapa no cuenta como "escribir" en él, pero sí hay que proteger el canal send de accesos concurrentes. muchos leen en paralelo, pero si alguien escribe (cierra el canal) hay que bloquear.
+	h.mu.RLock()
+	//RLock: solo leemos el mapa. esto, impide que disconnectUser (que usa Lock) cierre un canal justo mientras le mandamos.
 	defer h.mu.RUnlock()
 	for c := range h.clients[userID] {
 		select {
@@ -71,8 +72,8 @@ func (h *hub) disconnectUser(userID uuid.UUID) {
 	for c := range h.clients[userID] {
 		close(c.send) //la goroutine ve el canal cerrado y termina
 	}
-	delete(h.clients, userID) //cerramos todos los canales y borramos el mapa de conexiones del usuario. si se reconecta, se crea uno nuevo.
-	//si no borramos el mapa, queda un mapa vacío y la próxima vez que se conecte el usuario, el bucle de sendToUser no hace nada (porque el mapa está vacío) pero sigue existiendo y bloquea a los demás.
+	//después del close(c.send), esos client quedan en el mapa con el canal cerrado. el usuario desaparece del hub y nadie le manda nada a canales cerrados.
+	delete(h.clients, userID) 
 }
 
 func (s *state) wsHandler(w http.ResponseWriter, r *http.Request) {
@@ -129,4 +130,26 @@ func (s *state) wsHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+}
+
+type wsMessage struct {
+	MessageID      uuid.UUID `json:"message_id"`
+	IsMine         bool      `json:"is_mine"`
+	Content        string    `json:"content"`
+	CreatedAt      time.Time `json:"created_at"`
+	IsStoryReply   bool      `json:"is_story_reply"`
+	StoryMediaURL  *string   `json:"story_media_url"`
+	StoryMediaType *string   `json:"story_media_type"`
+}
+
+type wsEvent struct {
+	Type    string    `json:"type"`
+	ChatID  uuid.UUID `json:"chat_id"`
+	Message wsMessage `json:"message"`
+}
+
+//emitNewMessage avisa en vivo al destinatario. es un "hint": si no está conectado no pasa nada.
+func (s *state) emitNewMessage(chatID, recipientID uuid.UUID, m wsMessage) {
+	m.IsMine = false
+	s.hub.sendToUser(recipientID, wsEvent{Type: "new_message", ChatID: chatID, Message: m})
 }

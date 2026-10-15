@@ -367,6 +367,11 @@ func (s *state) createMessage(w http.ResponseWriter, r *http.Request){
 		recipientID = chat.UserTwoID
 	}
 	go s.notifyNewMessage(chatID, userID, recipientID, chat.UserOneID == recipientID, body.Content)
+	s.emitNewMessage(chatID, recipientID, wsMessage{
+		MessageID: newMessage.MessageID,
+		Content:   newMessage.Content,
+		CreatedAt: newMessage.CreatedAt,
+	})
 	type messageResponse struct {
 		MessageID uuid.UUID `json:"message_id"`
 		ChatID    uuid.UUID `json:"chat_id"`
@@ -2104,7 +2109,11 @@ func (s *state) createFirstMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	
 	go s.notifyNewMessage(chat.ChatID, userID, otherID, chat.UserOneID == otherID, content)
-
+	s.emitNewMessage(chat.ChatID, otherID, wsMessage{
+		MessageID: message.MessageID,
+		Content:   message.Content,
+		CreatedAt: message.CreatedAt,
+	})
 	RespondWithJSON(w, 201, map[string]any{
 		"chat_id":    chat.ChatID,
 		"message_id": message.MessageID,
@@ -2447,6 +2456,16 @@ func (s *state) replyToStory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go s.notifyNewMessage(chat.ChatID, userID, story.UserID, chat.UserOneID == story.UserID, "Respondió a tu historia: "+content)
+	mediaURL := absoluteURL(r, story.MediaUrl)
+	mediaType := story.MediaType
+	s.emitNewMessage(chat.ChatID, story.UserID, wsMessage{
+		MessageID: message.MessageID,
+		Content:   message.Content,
+		CreatedAt: message.CreatedAt,
+		IsStoryReply:   true,
+		StoryMediaURL:  &mediaURL,
+		StoryMediaType: &mediaType,
+	})
 	RespondWithJSON(w, 201, map[string]any{"chat_id":    chat.ChatID,"message_id": message.MessageID,})
 }
 //el state es el receiver, (el objeto que está ejecutando el método)
@@ -2520,6 +2539,8 @@ func (s *state) handlers() {
 	http.Handle("POST /chats/{chatID}/report", s.authMiddleware(http.HandlerFunc(s.reportChat)))
 
 	http.Handle("POST /stories/{storyID}/reply", s.authMiddleware(http.HandlerFunc(s.replyToStory)))
+
+	http.HandleFunc("GET /ws", s.wsHandler) //para websockets no necesitamos authMiddleware porque la autenticación se hace dentro de wsHandler, no antes.
 }
 
 

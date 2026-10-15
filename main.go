@@ -12,6 +12,7 @@ import(
 type state struct {
     db  *database.Queries
 	cfg *config.Config
+	hub *hub
 }
 
 func main(){
@@ -34,6 +35,7 @@ func main(){
 	programState := &state{
 		db:  dbQueries,
 		cfg: &cfg,
+		hub: newHub(),
 	}
 	//inicializo la libreta con los handlers, me va a permitir usar las rutas y las funciones
 	programState.handlers()
