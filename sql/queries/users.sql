@@ -1,10 +1,12 @@
 -- name: CreateUser :one
-INSERT INTO users (username, email, password_hash, date_of_birth)
+INSERT INTO users (username, email, password_hash, date_of_birth, terms_accepted_at, terms_version)
 VALUES (
     $1,
     $2,
     $3,
-    $4
+    $4,
+    (now() at time zone 'utc'),
+    $5
 )
 RETURNING *;
 

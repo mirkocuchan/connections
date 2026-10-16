@@ -25,6 +25,8 @@ import(
 //creamos un tipo igual que time.Time. por que? porque cuando viene un time.Time, unmarshal no sabe que hacer. va a usar unmarshalJSON, pero ve "YYYY-MMM-DDD" y le falta información
 //no sabe como unmarshallear, por eso creamos este type. encoding/json pregunta: este tipo tiene unmarshalJSON function? por eso la creamos, para que pueda unmarshalear
 type Date time.Time
+//cada vez que cambien los términos, se cambia esta fecha
+const currentTermsVersion = "2026-10-16"
 
 //Date es el R3ECEIVER porque el método necesita saber sobre qué instancia de Date está actuando.
 func (d *Date) UnmarshalJSON(data []byte) error{
@@ -203,31 +205,6 @@ func (s *state) getOrCreateChat(ctx context.Context, userID, otherID uuid.UUID) 
 	return chat, err
 }
 
-// false si el dueño es anónimo para mí (me inició un chat) o hay bloqueo entre nosotros
-func (s *state) canSeeUser(ctx context.Context, viewerID, ownerID uuid.UUID) (bool, error) {
-	if viewerID == ownerID {
-		return true, nil
-	}
-	blocked, err := s.isBlocked(ctx, viewerID, ownerID)
-	if err != nil {
-		return false, err
-	}
-	if blocked {
-		return false, nil
-	}
-	chat, err := s.db.GetChatByUserIDs(ctx, database.GetChatByUserIDsParams{
-		UserOneID: viewerID,
-		UserTwoID: ownerID,
-	})
-	if err == sql.ErrNoRows {
-		return true, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	return chat.UserOneID != ownerID, nil
-}
-
 // borra del disco un archivo subido, solo si pertenece a ese usuario
 func removeUploadedFile(ownerID uuid.UUID, url string) {
 	if !strings.HasPrefix(url, "/uploads/") {
@@ -305,4 +282,13 @@ func respondChatError(w http.ResponseWriter, err error) {
 		return
 	}
 	RespondWithError(w, 404, "Chat not found")
+}
+
+func ageYears(dob, now time.Time) int {
+	years := now.Year() - dob.Year()
+	//si todavía no cumplió años este año, restamos uno
+	if now.Month() < dob.Month() || (now.Month() == dob.Month() && now.Day() < dob.Day()) {
+		years--
+	}
+	return years
 }

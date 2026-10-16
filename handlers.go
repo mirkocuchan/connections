@@ -20,6 +20,7 @@ type receivedUser struct {
 	Email       string `json:"email"`
 	Password    string `json:"password"`
 	DateOfBirth Date   `json:"date_of_birth"`
+	AcceptTerms bool   `json:"accept_terms"`
 }
 
 func (s *state) register(w http.ResponseWriter, r *http.Request){
@@ -36,6 +37,22 @@ func (s *state) register(w http.ResponseWriter, r *http.Request){
         RespondWithError(w, 400, "error unmarshalling JSON")
 		return
     }
+	dob := time.Time(user.DateOfBirth)
+	now := time.Now().UTC()
+	if dob.IsZero() || dob.After(now) || dob.Year() < 1900 {
+		RespondWithError(w, 400, "Fecha de nacimiento inválida")
+		return
+	}
+	if ageYears(dob, now) < 18 {
+		RespondWithError(w, 403, "No se pudo crear la cuenta")
+		return
+	}
+
+	if !user.AcceptTerms {
+		RespondWithError(w, 400, "Tenés que aceptar los términos y condiciones")
+		return
+	}
+
 	hashedPassword, err := auth.HashPassword(user.Password)
 	if err != nil{
 		RespondWithError(w, 400, "error hashing the password")
@@ -48,7 +65,11 @@ func (s *state) register(w http.ResponseWriter, r *http.Request){
 		Email: user.Email,
 		PasswordHash: hashedPassword,
 		DateOfBirth: time.Time(user.DateOfBirth),
-		}
+		TermsVersion: sql.NullString{
+			String: currentTermsVersion,
+			Valid:  true,
+		},
+	}
 	
 	createdUser, err := s.db.CreateUser(r.Context(), userParams)
 	//cuando Postgres rechaza un INSERT por violar el UNIQUE de username o email, no te devuelve un error genérico de Go. 
@@ -1116,7 +1137,7 @@ func (s *state) getChats(w http.ResponseWriter, r *http.Request){
 
 	chats, err := s.db.GetChatsByUserID(r.Context(), userID)
 	if err != nil{
-		RespondWithError(w, 404, "chat doesn't exist in the database")
+		RespondWithError(w, 500, "couldn't get chats")
     	return
 	}
 
@@ -1147,15 +1168,7 @@ func (s *state) getChats(w http.ResponseWriter, r *http.Request){
 		card, err := s.db.GetCardWithChatCreatorAndSubject(r.Context(), cardParams)
 		cardOK := err == nil
 
-		displayName := s.anonName(chat.ChatID)
-		if err == nil && card.Nickname.Valid && card.Nickname.String != "" {
-			displayName = card.Nickname.String
-		} else if chat.UserOneID == userID {
-			otherUser, err := s.db.GetUserByID(r.Context(), otherUserID)
-			if err == nil {
-				displayName = otherUser.Username
-			}
-		}
+		displayName := s.displayNameFor(r.Context(), chat.ChatID, userID, otherUserID, chat.UserOneID == userID)
 
 		lastMessage, err := s.db.GetLastMessageByChatID(r.Context(), chat.ChatID)
 		lastMessageContent := ""

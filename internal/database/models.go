@@ -124,6 +124,8 @@ type User struct {
 	DetectedCountry sql.NullString
 	GlobalDiscovery bool
 	PushMode        string
+	TermsAcceptedAt sql.NullTime
+	TermsVersion    sql.NullString
 }
 
 type UserPhoto struct {

@@ -45,53 +45,6 @@ func (q *Queries) CreateBlock(ctx context.Context, arg CreateBlockParams) (Block
 	return i, err
 }
 
-const createReport = `-- name: CreateReport :one
-INSERT INTO reports (reporter_id, reported_id, chat_id, reported_username, reason, details)
-VALUES (
-    $1,
-    $2,
-    $3,
-    $4,
-    $5,
-    $6
-)
-RETURNING report_id, reporter_id, reported_id, reason, details, created_at, chat_id, reported_username, status, reviewed_at
-`
-
-type CreateReportParams struct {
-	ReporterID       uuid.NullUUID
-	ReportedID       uuid.NullUUID
-	ChatID           uuid.NullUUID
-	ReportedUsername sql.NullString
-	Reason           string
-	Details          sql.NullString
-}
-
-func (q *Queries) CreateReport(ctx context.Context, arg CreateReportParams) (Report, error) {
-	row := q.db.QueryRowContext(ctx, createReport,
-		arg.ReporterID,
-		arg.ReportedID,
-		arg.ChatID,
-		arg.ReportedUsername,
-		arg.Reason,
-		arg.Details,
-	)
-	var i Report
-	err := row.Scan(
-		&i.ReportID,
-		&i.ReporterID,
-		&i.ReportedID,
-		&i.Reason,
-		&i.Details,
-		&i.CreatedAt,
-		&i.ChatID,
-		&i.ReportedUsername,
-		&i.Status,
-		&i.ReviewedAt,
-	)
-	return i, err
-}
-
 const createReportWithEvidence = `-- name: CreateReportWithEvidence :one
 WITH new_report AS (INSERT INTO reports (reporter_id, reported_id, chat_id, reported_username, reason, details)
     VALUES ( 

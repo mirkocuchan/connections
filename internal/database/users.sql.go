@@ -14,14 +14,16 @@ import (
 )
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (username, email, password_hash, date_of_birth)
+INSERT INTO users (username, email, password_hash, date_of_birth, terms_accepted_at, terms_version)
 VALUES (
     $1,
     $2,
     $3,
-    $4
+    $4,
+    (now() at time zone 'utc'),
+    $5
 )
-RETURNING user_id, username, email, password_hash, date_of_birth, created_at, updated_at, display_name, bio, city, country, hobbies, languages, detected_country, global_discovery, push_mode
+RETURNING user_id, username, email, password_hash, date_of_birth, created_at, updated_at, display_name, bio, city, country, hobbies, languages, detected_country, global_discovery, push_mode, terms_accepted_at, terms_version
 `
 
 type CreateUserParams struct {
@@ -29,6 +31,7 @@ type CreateUserParams struct {
 	Email        string
 	PasswordHash string
 	DateOfBirth  time.Time
+	TermsVersion sql.NullString
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
@@ -37,6 +40,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		arg.Email,
 		arg.PasswordHash,
 		arg.DateOfBirth,
+		arg.TermsVersion,
 	)
 	var i User
 	err := row.Scan(
@@ -56,6 +60,8 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.DetectedCountry,
 		&i.GlobalDiscovery,
 		&i.PushMode,
+		&i.TermsAcceptedAt,
+		&i.TermsVersion,
 	)
 	return i, err
 }
@@ -70,7 +76,7 @@ func (q *Queries) DeleteUser(ctx context.Context, userID uuid.UUID) error {
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT user_id, username, email, password_hash, date_of_birth, created_at, updated_at, display_name, bio, city, country, hobbies, languages, detected_country, global_discovery, push_mode FROM users WHERE email = $1
+SELECT user_id, username, email, password_hash, date_of_birth, created_at, updated_at, display_name, bio, city, country, hobbies, languages, detected_country, global_discovery, push_mode, terms_accepted_at, terms_version FROM users WHERE email = $1
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
@@ -93,12 +99,14 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.DetectedCountry,
 		&i.GlobalDiscovery,
 		&i.PushMode,
+		&i.TermsAcceptedAt,
+		&i.TermsVersion,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT user_id, username, email, password_hash, date_of_birth, created_at, updated_at, display_name, bio, city, country, hobbies, languages, detected_country, global_discovery, push_mode FROM users WHERE user_id = $1
+SELECT user_id, username, email, password_hash, date_of_birth, created_at, updated_at, display_name, bio, city, country, hobbies, languages, detected_country, global_discovery, push_mode, terms_accepted_at, terms_version FROM users WHERE user_id = $1
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, userID uuid.UUID) (User, error) {
@@ -121,6 +129,8 @@ func (q *Queries) GetUserByID(ctx context.Context, userID uuid.UUID) (User, erro
 		&i.DetectedCountry,
 		&i.GlobalDiscovery,
 		&i.PushMode,
+		&i.TermsAcceptedAt,
+		&i.TermsVersion,
 	)
 	return i, err
 }
@@ -174,7 +184,7 @@ UPDATE users SET
     languages    = COALESCE($6, languages),
     updated_at   = NOW()
 WHERE user_id = $7
-RETURNING user_id, username, email, password_hash, date_of_birth, created_at, updated_at, display_name, bio, city, country, hobbies, languages, detected_country, global_discovery, push_mode
+RETURNING user_id, username, email, password_hash, date_of_birth, created_at, updated_at, display_name, bio, city, country, hobbies, languages, detected_country, global_discovery, push_mode, terms_accepted_at, terms_version
 `
 
 type UpdateUserParams struct {
@@ -215,6 +225,8 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, e
 		&i.DetectedCountry,
 		&i.GlobalDiscovery,
 		&i.PushMode,
+		&i.TermsAcceptedAt,
+		&i.TermsVersion,
 	)
 	return i, err
 }

@@ -15,18 +15,6 @@ DELETE FROM blocks WHERE blocker_id = $1 AND blocked_id = $2;
 -- name: ExistsBlockBetweenUsers :one
 SELECT 1 FROM blocks WHERE (blocker_id = $1 AND blocked_id = $2) OR (blocker_id = $2 AND blocked_id = $1) LIMIT 1;
 
--- name: CreateReport :one
-INSERT INTO reports (reporter_id, reported_id, chat_id, reported_username, reason, details)
-VALUES (
-    $1,
-    $2,
-    $3,
-    $4,
-    $5,
-    $6
-)
-RETURNING *;
-
 -- name: ExistsBlockByBlocker :one
 SELECT 1 FROM blocks WHERE blocker_id = $1 AND blocked_id = $2 LIMIT 1;
 
