@@ -226,3 +226,78 @@ func (q *Queries) GetMessagesBySenderID(ctx context.Context, senderID uuid.UUID)
 	}
 	return items, nil
 }
+
+const getMessagesPage = `-- name: GetMessagesPage :many
+SELECT m.message_id, m.chat_id, m.sender_id, m.content, m.created_at, m.updated_at, m.story_id, m.is_story_reply, s.media_url AS story_media_url, s.media_type AS story_media_type
+FROM messages m
+LEFT JOIN stories s --por si hay mensajes a historias
+       ON s.story_id = m.story_id
+      AND s.expires_at > (now() at time zone 'utc')
+WHERE m.chat_id = $1
+  AND (
+        $2::timestamp IS NULL --los 30 más nuevos, sin cursos scrolleando para arriba
+        OR (m.created_at, m.message_id) <
+           ($2::timestamp, $3::uuid) --compara de a pares, como se ordenan las palabras en un diccionario: primero por fecha, y si la fecha es la misma, desempata el ID
+      )
+ORDER BY m.created_at DESC, m.message_id DESC
+LIMIT $4
+`
+
+type GetMessagesPageParams struct {
+	ChatID          uuid.UUID
+	BeforeCreatedAt sql.NullTime
+	BeforeID        uuid.NullUUID
+	PageSize        int32
+}
+
+type GetMessagesPageRow struct {
+	MessageID      uuid.UUID
+	ChatID         uuid.UUID
+	SenderID       uuid.UUID
+	Content        string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	StoryID        uuid.NullUUID
+	IsStoryReply   bool
+	StoryMediaUrl  sql.NullString
+	StoryMediaType sql.NullString
+}
+
+func (q *Queries) GetMessagesPage(ctx context.Context, arg GetMessagesPageParams) ([]GetMessagesPageRow, error) {
+	rows, err := q.db.QueryContext(ctx, getMessagesPage,
+		arg.ChatID,
+		arg.BeforeCreatedAt,
+		arg.BeforeID,
+		arg.PageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetMessagesPageRow
+	for rows.Next() {
+		var i GetMessagesPageRow
+		if err := rows.Scan(
+			&i.MessageID,
+			&i.ChatID,
+			&i.SenderID,
+			&i.Content,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.StoryID,
+			&i.IsStoryReply,
+			&i.StoryMediaUrl,
+			&i.StoryMediaType,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

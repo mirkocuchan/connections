@@ -38,3 +38,18 @@ VALUES (
     true
 )
 RETURNING *;
+
+-- name: GetMessagesPage :many
+SELECT m.*, s.media_url AS story_media_url, s.media_type AS story_media_type
+FROM messages m
+LEFT JOIN stories s --por si hay mensajes a historias
+       ON s.story_id = m.story_id
+      AND s.expires_at > (now() at time zone 'utc')
+WHERE m.chat_id = sqlc.arg('chat_id')
+  AND (
+        sqlc.narg('before_created_at')::timestamp IS NULL --los 30 más nuevos, sin cursos scrolleando para arriba
+        OR (m.created_at, m.message_id) <
+           (sqlc.narg('before_created_at')::timestamp, sqlc.narg('before_id')::uuid) --compara de a pares, como se ordenan las palabras en un diccionario: primero por fecha, y si la fecha es la misma, desempata el ID
+      )
+ORDER BY m.created_at DESC, m.message_id DESC
+LIMIT sqlc.arg('page_size');

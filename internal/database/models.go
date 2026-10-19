@@ -44,6 +44,12 @@ type Chat struct {
 	UpdatedAt time.Time
 }
 
+type ChatRead struct {
+	ChatID     uuid.UUID
+	UserID     uuid.UUID
+	LastReadAt time.Time
+}
+
 type Message struct {
 	MessageID    uuid.UUID
 	ChatID       uuid.UUID

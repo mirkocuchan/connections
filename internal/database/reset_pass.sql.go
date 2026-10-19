@@ -22,9 +22,11 @@ func (q *Queries) DeletePasswordReset(ctx context.Context, userID uuid.UUID) err
 }
 
 const getPasswordReset = `-- name: GetPasswordReset :one
+
 SELECT user_id, code_hash, expires_at, attempts, created_at FROM password_resets WHERE user_id = $1
 `
 
+// poné en la fila existente el code_hash que venía en el INSERT, reemplaza lo que habia con lo nuevo que requesteaste.
 func (q *Queries) GetPasswordReset(ctx context.Context, userID uuid.UUID) (PasswordReset, error) {
 	row := q.db.QueryRowContext(ctx, getPasswordReset, userID)
 	var i PasswordReset

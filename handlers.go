@@ -12,6 +12,8 @@ import (
 	"database/sql"
 	"strings"
 	"os"
+	"strconv"
+	"slices"
 	"log"
 	"crypto/subtle"
 	"errors"
@@ -436,11 +438,48 @@ func (s *state) getMessages(w http.ResponseWriter, r *http.Request){
 		return
 	}//me fijo si pertenece a alguno de los dos usuarios del chat. si no, devuelvo 403 forbidden.
 
-	messages, err := s.db.GetMessagesByChatID(r.Context(), chatID)
-	if err != nil{
+	const defaultPageSize = 30
+	const maxPageSize = 100
+
+	limit := defaultPageSize
+	if v := r.URL.Query().Get("limit"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 {
+			RespondWithError(w, 400, "invalid limit")
+			return
+		}
+		if n > maxPageSize {
+			n = maxPageSize
+		}
+		limit = n
+	}
+
+	params := database.GetMessagesPageParams{
+		ChatID:   chatID,
+		PageSize: int32(limit),
+	}
+	if v := r.URL.Query().Get("before"); v != "" {
+		beforeID, err := uuid.Parse(v)
+		if err != nil {
+			RespondWithError(w, 400, "invalid before")
+			return
+		}
+		ref, err := s.db.GetMessageByID(r.Context(), beforeID)
+		if err != nil || ref.ChatID != chatID {
+			RespondWithError(w, 400, "invalid before")
+			return
+		}
+		params.BeforeCreatedAt = sql.NullTime{Time: ref.CreatedAt, Valid: true}
+		params.BeforeID = uuid.NullUUID{UUID: ref.MessageID, Valid: true}
+	}
+
+	messages, err := s.db.GetMessagesPage(r.Context(), params)
+	if err != nil {
 		RespondWithError(w, 500, "couldn't get the messages from the database")
 		return
 	}
+	//la consulta trae los más nuevos primero, y la app espera orden cronológico, por eso los damos vuelta
+	slices.Reverse(messages)
 	type messageResponse struct {
 		MessageID uuid.UUID `json:"message_id"`
 		ChatID    uuid.UUID `json:"chat_id"`
@@ -1148,6 +1187,7 @@ func (s *state) getChats(w http.ResponseWriter, r *http.Request){
 		IsInitiator  bool      `json:"is_initiator"`
 		Nickname     string    `json:"nickname"`
 		LastMessage  string    `json:"last_message"`
+		UnreadCount  int64     `json:"unread_count"`
 		PhotoURL     string    `json:"photo_url"`
 		Blocked		 bool 	   `json:"blocked"`
 		CreatedAt    time.Time `json:"created_at"`
@@ -1161,6 +1201,15 @@ func (s *state) getChats(w http.ResponseWriter, r *http.Request){
 		} else {
 			otherUserID = chat.UserOneID
 		}
+		unreadRows, err := s.db.GetUnreadCountsByUserID(r.Context(), userID)
+		if err != nil {
+			RespondWithError(w, 500, "couldn't get unread counts")
+			return
+		}
+		unread := make(map[uuid.UUID]int64, len(unreadRows))
+		for _, row := range unreadRows {
+			unread[row.ChatID] = row.UnreadCount
+		} //calculo los unreads de todos los chats
 
 		cardParams := database.GetCardWithChatCreatorAndSubjectParams{
 			ChatID:    chat.ChatID,
@@ -1205,6 +1254,7 @@ func (s *state) getChats(w http.ResponseWriter, r *http.Request){
 			IsInitiator: chat.UserOneID == userID,
 			Nickname:    displayName,
 			LastMessage: lastMessageContent,
+			UnreadCount: unread[chat.ChatID],
 			PhotoURL:    photoURL,
 			Blocked:  	 blocked,
 			CreatedAt:   chat.CreatedAt,
@@ -2634,6 +2684,36 @@ func (s *state) resetPassword(w http.ResponseWriter, r *http.Request) {
 	RespondWithJSON(w, 200, map[string]string{"status": "success"})
 }
 
+func (s *state) markChatRead(w http.ResponseWriter, r *http.Request) {
+	userID, err := s.getUserIDFromContext(r)
+	if err != nil {
+		RespondWithError(w, 401, "Unauthorized")
+		return
+	}
+	chatID, err := uuid.Parse(r.PathValue("chatID"))
+	if err != nil {
+		RespondWithError(w, 404, "Invalid chat ID")
+		return
+	}
+	chat, err := s.db.GetChatByID(r.Context(), chatID)
+	if err != nil {
+		RespondWithError(w, 404, "Chat not found")
+		return
+	}
+	if chat.UserOneID != userID && chat.UserTwoID != userID {
+		RespondWithError(w, 403, "you are not a participant of this chat")
+		return
+	}
+	err = s.db.MarkChatRead(r.Context(), database.MarkChatReadParams{
+		ChatID: chatID,
+		UserID: userID,
+	})
+	if err != nil {
+		RespondWithError(w, 500, "couldn't mark the chat as read")
+		return
+	}
+	RespondWithJSON(w, 200, map[string]string{"status": "success"})
+}
 
 //el state es el receiver, (el objeto que está ejecutando el método)
 //cuando handlers() escribe s.register, ese s es el mismo que le llegó a handlers(),  necesita recibir la instancia de alguna manera 
@@ -2716,6 +2796,8 @@ func (s *state) handlers() {
 	http.Handle("POST /forgot-password", forgotLimiter.middleware(http.HandlerFunc(s.forgotPassword)))
 	resetLimiter := newRateLimiter(12*time.Second, 5)
 	http.Handle("POST /reset-password", resetLimiter.middleware(http.HandlerFunc(s.resetPassword)))
+
+	http.Handle("POST /chats/{chatID}/read", s.authMiddleware(http.HandlerFunc(s.markChatRead)))
 }
 
 
