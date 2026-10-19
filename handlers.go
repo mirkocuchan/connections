@@ -13,6 +13,8 @@ import (
 	"strings"
 	"os"
 	"log"
+	"crypto/subtle"
+	"errors"
 )
 
 type receivedUser struct {
@@ -2481,12 +2483,167 @@ func (s *state) replyToStory(w http.ResponseWriter, r *http.Request) {
 	})
 	RespondWithJSON(w, 201, map[string]any{"chat_id":    chat.ChatID,"message_id": message.MessageID,})
 }
+
+func (s *state) forgotPassword(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Email string `json:"email"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		RespondWithError(w, 400, "Pedido inválido")
+		return
+	}
+	email := strings.TrimSpace(body.Email)
+
+	//la respuesta es SIEMPRE esta, exista o no el email
+	respondOK := func() {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]string{
+			"message": "Si el email está registrado, te enviamos un código",
+		})
+	}
+
+	user, err := s.db.GetUserByEmail(r.Context(), email)
+	if errors.Is(err, sql.ErrNoRows) {
+		respondOK() //no existe: no lo revelamos
+		return
+	}
+	if err != nil {
+		RespondWithError(w, 500, "Error interno")
+		return
+	}
+
+	//enfriamiento: si ya mandamos un código hace menos de 60 s, no mandamos otro
+	existing, err := s.db.GetPasswordReset(r.Context(), user.UserID)
+	if err == nil && time.Since(existing.CreatedAt) < 60*time.Second {
+		respondOK()
+		return
+	}
+
+	code, err := generateResetCode()
+	if err != nil {
+		RespondWithError(w, 500, "Error interno")
+		return
+	}
+	err = s.db.UpsertPasswordReset(r.Context(), database.UpsertPasswordResetParams{
+		UserID:    user.UserID,
+		CodeHash:  hashResetCode(code),
+		ExpiresAt: time.Now().UTC().Add(15 * time.Minute),
+	})
+	if err != nil {
+		RespondWithError(w, 500, "Error interno")
+		return
+	}
+
+	//el mail se manda en segundo plano para no estar tanto tiempo y terminar develando que mail usa la aplicacion.
+	go func() {
+		body := "Tu código para recuperar la contraseña es: " + code +
+			"\n\nVence en 15 minutos. Si no lo pediste vos, ignorá este mail."
+		if err := s.mailer.Send(user.Email, "Recuperar contraseña", body); err != nil {
+			log.Printf("no se pudo enviar el mail de recuperación: %v", err)
+		}
+	}()
+
+	respondOK()
+}
+
+const maxResetAttempts = 5
+
+type resetPasswordRequest struct {
+	Email       string `json:"email"`
+	Code        string `json:"code"`
+	NewPassword string `json:"new_password"`
+}
+
+func (s *state) resetPassword(w http.ResponseWriter, r *http.Request) {
+	var body resetPasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		RespondWithError(w, 400, "error reading JSON")
+		return
+	}
+	email := strings.TrimSpace(body.Email)
+	code := strings.TrimSpace(body.Code)
+	if len(body.NewPassword) < 6 {
+		RespondWithError(w, 400, "new password must be at least 6 characters")
+		return
+	}
+
+	//todas las fallas "del código" responden lo mismo, sin aclarar cuál fue
+	invalid := func() {
+		RespondWithError(w, 400, "Código inválido o vencido")
+	}
+
+	user, err := s.db.GetUserByEmail(r.Context(), email)
+	if errors.Is(err, sql.ErrNoRows) {
+		invalid()
+		return
+	}
+	if err != nil {
+		RespondWithError(w, 500, "Error interno")
+		return
+	}
+
+	reset, err := s.db.GetPasswordReset(r.Context(), user.UserID)
+	if errors.Is(err, sql.ErrNoRows) {
+		invalid()
+		return
+	}
+	if err != nil {
+		RespondWithError(w, 500, "Error interno")
+		return
+	}
+
+	//venció o ya se gastaron los intentos, el código no sirve más
+	if time.Now().UTC().After(reset.ExpiresAt) || reset.Attempts >= maxResetAttempts {
+		s.db.DeletePasswordReset(r.Context(), user.UserID)
+		invalid()
+		return
+	}
+
+	//comparación en tiempo constante, una comparación normal se detiene en el primer carácter distinto, así que tarda un poco menos cuando el primer dígito falla. 
+	//midiendo tiempos se podría adivinar el código de a un carácter, la función de subtle siempre tarda lo mismo.
+	if subtle.ConstantTimeCompare([]byte(hashResetCode(code)), []byte(reset.CodeHash)) != 1 {
+		s.db.IncrementResetAttempts(r.Context(), user.UserID)
+		invalid()
+		return
+	}
+
+	hashed, err := auth.HashPassword(body.NewPassword)
+	if err != nil {
+		RespondWithError(w, 500, "error hashing the password")
+		return
+	}
+	err = s.db.UpdateUserPassword(r.Context(), database.UpdateUserPasswordParams{
+		UserID:       user.UserID,
+		PasswordHash: hashed,
+	})
+	if err != nil {
+		RespondWithError(w, 500, "couldn't update the password")
+		return
+	}
+
+	//el código ya se usó: se borra para que no sirva dos veces
+	s.db.DeletePasswordReset(r.Context(), user.UserID)
+
+	//cortar todas las sesiones, igual que en change-password
+	if err := s.db.RevokeAllUserRefreshTokens(r.Context(), user.UserID); err != nil {
+		log.Printf("couldn't revoke refresh tokens for %s: %v", user.UserID, err)
+	}
+	s.hub.disconnectUser(user.UserID)
+
+	RespondWithJSON(w, 200, map[string]string{"status": "success"})
+}
+
+
 //el state es el receiver, (el objeto que está ejecutando el método)
 //cuando handlers() escribe s.register, ese s es el mismo que le llegó a handlers(),  necesita recibir la instancia de alguna manera 
 func (s *state) handlers() {
+	loginLimiter := newRateLimiter(12*time.Second, 5)   //5 intentos seguidos, luego 1 cada 12 s
+	registerLimiter := newRateLimiter(time.Minute, 3)   //3 registros seguidos, luego 1 por minuto
+
 	//handle toma si o si del tipo handler, y como s.register no lo es, la convertimos con handlerfunc
-	http.Handle("POST /register", http.HandlerFunc(s.register))
-	http.Handle("POST /login", http.HandlerFunc(s.login))
+	http.Handle("POST /login", loginLimiter.middleware(http.HandlerFunc(s.login)))
+	http.Handle("POST /register", registerLimiter.middleware(http.HandlerFunc(s.register)))
 	http.Handle("POST /refresh", http.HandlerFunc(s.refresh))
 	http.Handle("POST /logout", http.HandlerFunc(s.logout))
 
@@ -2554,6 +2711,11 @@ func (s *state) handlers() {
 	http.Handle("POST /stories/{storyID}/reply", s.authMiddleware(http.HandlerFunc(s.replyToStory)))
 
 	http.HandleFunc("GET /ws", s.wsHandler) //para websockets no necesitamos authMiddleware porque la autenticación se hace dentro de wsHandler, no antes.
+
+	forgotLimiter := newRateLimiter(time.Minute, 3)
+	http.Handle("POST /forgot-password", forgotLimiter.middleware(http.HandlerFunc(s.forgotPassword)))
+	resetLimiter := newRateLimiter(12*time.Second, 5)
+	http.Handle("POST /reset-password", resetLimiter.middleware(http.HandlerFunc(s.resetPassword)))
 }
 
 

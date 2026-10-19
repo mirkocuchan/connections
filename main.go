@@ -13,6 +13,7 @@ type state struct {
     db  *database.Queries
 	cfg *config.Config
 	hub *hub
+	mailer Mailer
 }
 
 func main(){
@@ -36,6 +37,7 @@ func main(){
 		db:  dbQueries,
 		cfg: &cfg,
 		hub: newHub(),
+		mailer: logMailer{},
 	}
 	//inicializo la libreta con los handlers, me va a permitir usar las rutas y las funciones
 	programState.handlers()

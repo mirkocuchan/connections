@@ -55,6 +55,14 @@ type Message struct {
 	IsStoryReply bool
 }
 
+type PasswordReset struct {
+	UserID    uuid.UUID
+	CodeHash  string
+	ExpiresAt time.Time
+	Attempts  int32
+	CreatedAt time.Time
+}
+
 type PushToken struct {
 	Token     string
 	UserID    uuid.UUID
