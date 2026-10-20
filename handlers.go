@@ -1267,7 +1267,6 @@ func (s *state) getChats(w http.ResponseWriter, r *http.Request){
 
 type createPhotoStruct struct {
 	PhotoURL string `json:"photo_url"`
-	Position int `json:"position"`
 }
 func (s *state) uploadPhoto(w http.ResponseWriter, r *http.Request){
 	defer r.Body.Close()
@@ -1294,7 +1293,6 @@ func (s *state) uploadPhoto(w http.ResponseWriter, r *http.Request){
 	photoParams := database.CreateUserPhotoParams{
 		UserID:   userID,
 		PhotoUrl: body.PhotoURL,
-		Position: int32(body.Position),
 	}
 
 	userPhoto, err := s.db.CreateUserPhoto(r.Context(), photoParams)
@@ -1976,6 +1974,19 @@ func (s *state) reorderPhotos(w http.ResponseWriter, r *http.Request) {
 		}
 		seen[id] = true
 	}
+	//pasada 1: mover todas a posiciones altas para que no choquen con las actuales
+	for i, id := range body.PhotoIDs {
+		err := s.db.UpdatePhotoPosition(r.Context(), database.UpdatePhotoPositionParams{
+			Position: int32(i + 1000),
+			PhotoID:  id,
+			UserID:   userID,
+		})
+		if err != nil {
+			RespondWithError(w, 500, "couldn't update photo order")
+			return
+		}
+	}
+	//pasada 2: la posición definitiva
 	for i, id := range body.PhotoIDs {
 		err := s.db.UpdatePhotoPosition(r.Context(), database.UpdatePhotoPositionParams{
 			Position: int32(i),

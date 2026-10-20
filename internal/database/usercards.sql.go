@@ -66,18 +66,21 @@ func (q *Queries) CreateUserCard(ctx context.Context, arg CreateUserCardParams) 
 
 const createUserPhoto = `-- name: CreateUserPhoto :one
 INSERT INTO user_photos (user_id, photo_url, position)
-VALUES ($1, $2, $3)
+VALUES (
+    $1,
+    $2,
+    (SELECT COALESCE(MAX(position), -1) + 1 FROM user_photos WHERE user_id = $1)
+)
 RETURNING photo_id, user_id, photo_url, position, created_at
 `
 
 type CreateUserPhotoParams struct {
 	UserID   uuid.UUID
 	PhotoUrl string
-	Position int32
 }
 
 func (q *Queries) CreateUserPhoto(ctx context.Context, arg CreateUserPhotoParams) (UserPhoto, error) {
-	row := q.db.QueryRowContext(ctx, createUserPhoto, arg.UserID, arg.PhotoUrl, arg.Position)
+	row := q.db.QueryRowContext(ctx, createUserPhoto, arg.UserID, arg.PhotoUrl)
 	var i UserPhoto
 	err := row.Scan(
 		&i.PhotoID,
@@ -553,7 +556,12 @@ func (q *Queries) RevealPhotosField(ctx context.Context, cardID uuid.UUID) error
 const searchUsersByUsername = `-- name: SearchUsersByUsername :many
 SELECT u.user_id, u.username, COALESCE(p.photo_url, '')::text AS photo_url
 FROM users u
-LEFT JOIN user_photos p ON p.user_id = u.user_id AND p.position = 0
+LEFT JOIN LATERAL (
+    SELECT photo_url FROM user_photos
+    WHERE user_id = u.user_id
+    ORDER BY position, photo_id
+    LIMIT 1
+) p ON true
 WHERE u.username ILIKE '%' || $1::text || '%'
 AND u.user_id <> $2::uuid
 AND u.user_id NOT IN (
@@ -575,6 +583,7 @@ type SearchUsersByUsernameRow struct {
 	PhotoUrl string
 }
 
+// para cada usuario u, ejecuta la subconsulta usando su u.user_id. LEFT: si la subconsulta no devuelve nada (usuario sin fotos), el usuario se conserva igual
 func (q *Queries) SearchUsersByUsername(ctx context.Context, arg SearchUsersByUsernameParams) ([]SearchUsersByUsernameRow, error) {
 	rows, err := q.db.QueryContext(ctx, searchUsersByUsername, arg.Query, arg.UserID)
 	if err != nil {

@@ -79,7 +79,11 @@ SELECT * FROM user_photos WHERE photo_id = $1 AND user_id = $2;
 
 -- name: CreateUserPhoto :one
 INSERT INTO user_photos (user_id, photo_url, position)
-VALUES ($1, $2, $3)
+VALUES (
+    $1,
+    $2,
+    (SELECT COALESCE(MAX(position), -1) + 1 FROM user_photos WHERE user_id = $1)
+)
 RETURNING *;
 
 -- name: DeleteUserPhoto :exec
@@ -144,7 +148,13 @@ UPDATE user_photos SET position = $1 WHERE photo_id = $2 AND user_id = $3;
 -- name: SearchUsersByUsername :many
 SELECT u.user_id, u.username, COALESCE(p.photo_url, '')::text AS photo_url
 FROM users u
-LEFT JOIN user_photos p ON p.user_id = u.user_id AND p.position = 0
+LEFT JOIN LATERAL (
+    SELECT photo_url FROM user_photos
+    WHERE user_id = u.user_id
+    ORDER BY position, photo_id
+    LIMIT 1
+) p ON true
+-- para cada usuario u, ejecuta la subconsulta usando su u.user_id. LEFT: si la subconsulta no devuelve nada (usuario sin fotos), el usuario se conserva igual
 WHERE u.username ILIKE '%' || sqlc.arg(query)::text || '%'
 AND u.user_id <> sqlc.arg(user_id)::uuid
 AND u.user_id NOT IN (
