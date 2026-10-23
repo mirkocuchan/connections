@@ -6,6 +6,8 @@ import (
 	"github.com/joho/godotenv"
 	"log"
 	"time"
+	"fmt"
+	"strings"
 )
 
 type Config struct {
@@ -33,18 +35,25 @@ func GetConfig() (Config, error){
 	if port == "" {
 		return Config{}, errors.New("PORT environment variable is not set")
 	}
+	// las plataformas de hosting dan solo el número ("8080"), ListenAndServe necesita ":8080"
+	if !strings.HasPrefix(port, ":") {
+		port = ":" + port
+	}
 
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
 		return Config{}, errors.New("JWT_SECRET environment variable is not set")
 	}
+	if len(jwtSecret) < 32 {
+		return Config{}, errors.New("JWT_SECRET must be at least 32 characters")
+	}
 	accessTokenDuration, accessErr := time.ParseDuration(os.Getenv("ACCESS_TOKEN_DURATION"))
 	refreshTokenDuration, refreshErr := time.ParseDuration(os.Getenv("REFRESH_TOKEN_DURATION"))
-	if accessErr != nil{
-		return Config{}, errors.New("ACCESS_TOKEN_DURATION environment variable is not set")
+		if accessErr != nil {
+		return Config{}, fmt.Errorf("ACCESS_TOKEN_DURATION is missing or invalid (example: 15m): %w", accessErr)
 	}
-	if refreshErr != nil{
-		return Config{}, errors.New("REFRESH_TOKEN_DURATION environment variable is not set")
+	if refreshErr != nil {
+		return Config{}, fmt.Errorf("REFRESH_TOKEN_DURATION is missing or invalid (example: 720h): %w", refreshErr)
 	}
 
 	config := Config{

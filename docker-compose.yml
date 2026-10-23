@@ -1,0 +1,76 @@
+# =====================================================================
+# docker-compose.yml: entorno de DESARROLLO de Connections
+#
+#qué hace: describe dos "servicios" (contenedores) que levantan juntos
+#  - db  → Postgres (la base de datos)
+#  - api → tu servidor Go (se construye con el Dockerfile de esta carpeta)
+#
+#la imagen es una foto vieja del código hasta que se vuelve a construir.
+# =====================================================================
+
+services:
+
+  # db: base de datos Postgres
+  db:
+    #imagen oficial de Postgres. no la escribimos nosotros, se descarga de Docker Hub.
+    image: postgres:16-alpine
+
+    #la primera vez que arranca con un volumen vacío, Postgres crea este usuario, contraseña y base. si el volumen ya tiene datos, ESTOS VALORES
+    #SE IGNORAN (para cambiarlos hay que borrar el volumen con down -v).
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: users
+
+    #formato "PUERTO_DE_mi_pc:PUERTO_DEL_CONTENEDOR".
+    #postgres escucha SIEMPRE en el 5432 dentro de su contenedor. acá abrimos el 5433 en mi pc (el 5432 ya lo usa tu Postgres 
+    #viejo instalado en la compu) y Docker reenvía al 5432 del contenedor.
+    #esto SOLO sirve para herramientas que corren en tu compu (goose, psql). la API no lo usa: ella llega por la red interna con db:5432.
+    ports:
+      - "5433:5432"
+
+    #guarda los datos de la base en un volumen administrado por Docker
+    #(pgdata). así los datos sobreviven aunque se borre el contenedor. /var/lib/postgresql/data es donde Postgres escribe.
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+    #Docker ejecuta este comando cada 5 segundos para saber si Postgres ya acepta conexiones. que el contenedor esté "arriba" no significa que la
+    #base esté lista. hasta 10 intentos fallidos (retries) y se marca unhealthy.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d users"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # api: el servidor Go
+  api:
+    #construye la imagen con el Dockerfile de esta carpeta (el punto = acá).
+    build: .
+
+    #"8080:8080" = puerto de mi pc : puerto del contenedor.
+    #por eso desde tu compu podés hacer curl localhost:8080. si da "port is already allocated", hay otro contenedor o programa
+    #usando el 8080 en mi pc.
+    ports:
+      - "8080:8080"
+
+    #variables de entorno que recibe la API. son las que lee config.go. el .env NO se copia al contenedor (está en .dockerignore); solo se usa
+    #para completar ${JWT_SECRET} acá abajo.
+    environment:
+      #"db" es el nombre del servicio de arriba: dentro de la red de Compose los servicios se encuentran por nombre. se usa el puerto REAL (5432),
+      #no el 5433. "localhost" acá sería el propio contenedor api y fallaría. sslmode=disable porque este Postgres no tiene SSL.
+      DB_URL: postgres://postgres:postgres@db:5432/users?sslmode=disable
+      PORT: ":8080"
+      #compose lo reemplaza con el valor de JWT_SECRET del archivo .env de esta carpeta. nunca escribir el secreto real acá (este archivo se commitea).
+      JWT_SECRET: ${JWT_SECRET}
+      ACCESS_TOKEN_DURATION: 15m
+      REFRESH_TOKEN_DURATION: 720h
+
+    #no arranca la API hasta que db esté "healthy" (según el healthcheck). evita que el server intente conectarse a una base que todavía arranca.
+    #tablas se crean asi: goose -dir sql/schema postgres "postgres://postgres:postgres@localhost:5433/users?sslmode=disable" up
+    depends_on:
+      db:
+        condition: service_healthy
+
+#volúmenes con nombre. Docker los guarda fuera de los contenedores. pgdata = los datos de Postgres. Se borra solo con "docker compose down -v".
+volumes:
+  pgdata:
