@@ -16,6 +16,7 @@ type Config struct {
 	JWTSecret string
 	AccessTokenDuration time.Duration
 	RefreshTokenDuration time.Duration
+	UploadDir string
 }
 
 func GetConfig() (Config, error){
@@ -55,6 +56,10 @@ func GetConfig() (Config, error){
 	if refreshErr != nil {
 		return Config{}, fmt.Errorf("REFRESH_TOKEN_DURATION is missing or invalid (example: 720h): %w", refreshErr)
 	}
+	uploadDir := os.Getenv("UPLOAD_DIR")
+	if uploadDir == "" {
+		uploadDir = "uploads" //valor por defecto, con esto: `go run` sigue andando como siempre
+	}
 
 	config := Config{
 		DBURL: dbURL,
@@ -62,6 +67,7 @@ func GetConfig() (Config, error){
 		JWTSecret: jwtSecret,
 		AccessTokenDuration: accessTokenDuration,
 		RefreshTokenDuration: refreshTokenDuration,
+		UploadDir: uploadDir,
 	}
 	return config, nil
 }

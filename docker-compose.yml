@@ -52,20 +52,23 @@ services:
     #usando el 8080 en mi pc.
     ports:
       - "8080:8080"
-
+    volumes:
+      - uploads:/data/uploads
     #variables de entorno que recibe la API. son las que lee config.go. el .env NO se copia al contenedor (está en .dockerignore); solo se usa
     #para completar ${JWT_SECRET} acá abajo.
     environment:
       #"db" es el nombre del servicio de arriba: dentro de la red de Compose los servicios se encuentran por nombre. se usa el puerto REAL (5432),
       #no el 5433. "localhost" acá sería el propio contenedor api y fallaría. sslmode=disable porque este Postgres no tiene SSL.
+      #puerto 5432 es donde Postgres realmente escucha. el 5433 es solo un número que Docker inventa en tu computadora para que herramientas de afuera (goose, psql) puedan entrar
       DB_URL: postgres://postgres:postgres@db:5432/users?sslmode=disable
       PORT: ":8080"
       #compose lo reemplaza con el valor de JWT_SECRET del archivo .env de esta carpeta. nunca escribir el secreto real acá (este archivo se commitea).
       JWT_SECRET: ${JWT_SECRET}
       ACCESS_TOKEN_DURATION: 15m
       REFRESH_TOKEN_DURATION: 720h
+      UPLOAD_DIR: /data/uploads
 
-    #no arranca la API hasta que db esté "healthy" (según el healthcheck). evita que el server intente conectarse a una base que todavía arranca.
+    #no arranca la API hasta que db esté "healthy" (según el healthcheck, si no da error healthy, error unhealthy). evita que el server intente conectarse a una base que todavía arranca.
     #tablas se crean asi: goose -dir sql/schema postgres "postgres://postgres:postgres@localhost:5433/users?sslmode=disable" up
     depends_on:
       db:
@@ -74,3 +77,4 @@ services:
 #volúmenes con nombre. Docker los guarda fuera de los contenedores. pgdata = los datos de Postgres. Se borra solo con "docker compose down -v".
 volumes:
   pgdata:
+  uploads:   #fotos subidas por usuarios, montado en la api en /data/uploads

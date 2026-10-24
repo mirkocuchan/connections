@@ -27,6 +27,8 @@ import(
 type Date time.Time
 //cada vez que cambien los términos, se cambia esta fecha
 const currentTermsVersion = "2026-10-16"
+//carpeta del disco donde se guardan las fotos subidas, main.go la pisa con UPLOAD_DIR
+var uploadDir = "uploads"
 
 //Date es el R3ECEIVER porque el método necesita saber sobre qué instancia de Date está actuando.
 func (d *Date) UnmarshalJSON(data []byte) error{
@@ -214,7 +216,7 @@ func removeUploadedFile(ownerID uuid.UUID, url string) {
 	if !strings.HasPrefix(name, ownerID.String()+"-") {
 		return
 	}
-	if err := os.Remove(filepath.Join("uploads", name)); err != nil && !os.IsNotExist(err) {
+	if err := os.Remove(filepath.Join(uploadDir, name)); err != nil && !os.IsNotExist(err) {
 		log.Printf("couldn't remove %s: %v", name, err)
 	}
 }

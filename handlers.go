@@ -11,6 +11,7 @@ import (
 	"github.com/lib/pq"
 	"database/sql"
 	"strings"
+	"path/filepath"
 	"os"
 	"strconv"
 	"slices"
@@ -1921,7 +1922,7 @@ func (s *state) uploadFile(w http.ResponseWriter, r *http.Request) {
 	defer file.Close()
 
 	filename := userID.String() + "-" + header.Filename
-	dst, err := os.Create("./uploads/" + filename)
+	dst, err := os.Create(filepath.Join(uploadDir, filename))
 	if err != nil {
 		RespondWithError(w, 500, "couldn't save the file")
 		return
@@ -2780,7 +2781,7 @@ func (s *state) handlers() {
 	http.Handle("GET /users/{userID}/profile", s.authMiddleware(http.HandlerFunc(s.getPublicProfile)))
 
 	http.Handle("POST /upload", s.authMiddleware(http.HandlerFunc(s.uploadFile)))
-	http.Handle("/uploads/", http.StripPrefix("/uploads/", http.FileServer(http.Dir("./uploads"))))
+	http.Handle("/uploads/", http.StripPrefix("/uploads/", http.FileServer(http.Dir(uploadDir))))
 	http.Handle("PATCH /me/photos/order", s.authMiddleware(http.HandlerFunc(s.reorderPhotos)))
 
 	http.Handle("PATCH /me/discovery-settings", s.authMiddleware(http.HandlerFunc(s.updateGlobalDiscovery)))
