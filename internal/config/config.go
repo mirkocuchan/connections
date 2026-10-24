@@ -8,6 +8,7 @@ import (
 	"time"
 	"fmt"
 	"strings"
+	"strconv"
 )
 
 type Config struct {
@@ -17,6 +18,7 @@ type Config struct {
 	AccessTokenDuration time.Duration
 	RefreshTokenDuration time.Duration
 	UploadDir string
+	TrustProxy bool
 }
 
 func GetConfig() (Config, error){
@@ -61,6 +63,15 @@ func GetConfig() (Config, error){
 		uploadDir = "uploads" //valor por defecto, con esto: `go run` sigue andando como siempre
 	}
 
+	trustProxy := false //por defecto NO confiamos en headers de proxy
+	if v := os.Getenv("TRUST_PROXY"); v != "" {
+		parsed, perr := strconv.ParseBool(v)
+		if perr != nil {
+			return Config{}, fmt.Errorf("TRUST_PROXY must be true or false: %w", perr)
+		}
+		trustProxy = parsed
+	}
+
 	config := Config{
 		DBURL: dbURL,
 		PORT: port,
@@ -68,6 +79,7 @@ func GetConfig() (Config, error){
 		AccessTokenDuration: accessTokenDuration,
 		RefreshTokenDuration: refreshTokenDuration,
 		UploadDir: uploadDir,
+		TrustProxy: trustProxy,
 	}
 	return config, nil
 }

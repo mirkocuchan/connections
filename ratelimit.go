@@ -1,7 +1,6 @@
 package main
 
 import (
-	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -63,10 +62,7 @@ func (rl *rateLimiter) cleanup() {
 //middleware envuelve un handler y si no quedan fichas, corta con 429
 func (rl *rateLimiter) middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip, _, err := net.SplitHostPort(r.RemoteAddr)
-		if err != nil {
-			ip = r.RemoteAddr
-		}
+		ip := getClientIP(r)
 		if !rl.allow(ip) {
 			w.Header().Set("Retry-After", "60")
 			RespondWithError(w, http.StatusTooManyRequests, "Demasiados intentos, probá de nuevo en un minuto")

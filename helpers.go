@@ -135,10 +135,18 @@ func (s *state) hasBlocked(ctx context.Context, blockerID, blockedID uuid.UUID) 
     return true, nil
 }
 
+//true solo si hay un proxy de confianza adelante que agrega X-Forwarded-For, main.go la pisa con TRUST_PROXY
+var trustProxy bool
+
 func getClientIP(r *http.Request) string {
-	forwarded := r.Header.Get("X-Forwarded-For")
-	if forwarded != "" {
-		return strings.Split(forwarded, ",")[0]
+	if trustProxy {
+		//"X-Forwarded-For: cliente, proxy1": cada proxy AGREGA al final. lo de la izquierda lo controla el cliente (falsificable), la última entrada la agregó nuestro proxy.
+		//es para que no falsifiquen la ip
+		parts := strings.Split(r.Header.Get("X-Forwarded-For"), ",")
+		last := strings.TrimSpace(parts[len(parts)-1])
+		if net.ParseIP(last) != nil { //si no es una IP válida, no la usamos
+			return last
+		}
 	}
 	ip, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
