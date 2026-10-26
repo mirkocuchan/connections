@@ -231,7 +231,7 @@ func (q *Queries) GetCardWithSubjectData(ctx context.Context, cardID uuid.UUID) 
 }
 
 const getDiscoverableUsers = `-- name: GetDiscoverableUsers :many
-SELECT u.user_id, u.username, u.email, u.password_hash, u.date_of_birth, u.created_at, u.updated_at, u.display_name, u.bio, u.city, u.country, u.hobbies, u.languages, u.detected_country, u.global_discovery, u.push_mode, u.terms_accepted_at, u.terms_version FROM users u
+SELECT u.user_id, u.username, u.email, u.password_hash, u.date_of_birth, u.created_at, u.updated_at, u.display_name, u.bio, u.city, u.country, u.hobbies, u.languages, u.detected_country, u.global_discovery, u.push_mode, u.terms_accepted_at, u.terms_version, u.banned_at, u.ban_reason FROM users u
 WHERE u.user_id <> $1::uuid
 AND u.user_id NOT IN (
     SELECT user_one_id FROM chats WHERE user_two_id = $1::uuid
@@ -280,6 +280,8 @@ func (q *Queries) GetDiscoverableUsers(ctx context.Context, arg GetDiscoverableU
 			&i.PushMode,
 			&i.TermsAcceptedAt,
 			&i.TermsVersion,
+			&i.BannedAt,
+			&i.BanReason,
 		); err != nil {
 			return nil, err
 		}

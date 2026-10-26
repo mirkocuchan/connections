@@ -302,3 +302,12 @@ func ageYears(dob, now time.Time) int {
 	}
 	return years
 }
+
+//isBanned dice si la cuenta está baneada. si la cuenta no existe, devuelve el error sql.ErrNoRows.
+func (s *state) isBanned(ctx context.Context, userID uuid.UUID) (bool, error) {
+	bannedAt, err := s.db.GetUserBannedAt(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	return bannedAt.Valid, nil //valid=true significa que banned_at tiene una fecha, entonces fue baneado
+}

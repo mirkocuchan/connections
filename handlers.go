@@ -148,7 +148,17 @@ func (s *state) login(w http.ResponseWriter, r *http.Request){
 		RespondWithError(w, 401, "Incorrect email or password")
 		return
 	}
-		
+	
+	banned, err := s.isBanned(r.Context(), user.UserID)
+	if err != nil {
+		RespondWithError(w, 500, "couldn't verify the account")
+		return
+	}
+	if banned {
+		RespondWithError(w, 403, "account suspended")
+		return
+	}
+
 	expiresIn := s.cfg.AccessTokenDuration
 	newJWT, err := auth.MakeJWT(user.UserID, s.cfg.JWTSecret, expiresIn)
 	if err != nil{
@@ -2727,6 +2737,68 @@ func (s *state) markChatRead(w http.ResponseWriter, r *http.Request) {
 	RespondWithJSON(w, 200, map[string]string{"status": "success"})
 }
 
+func (s *state) adminBanUser(w http.ResponseWriter, r *http.Request) {
+	userID, err := uuid.Parse(r.PathValue("userID"))
+	if err != nil {
+		RespondWithError(w, 400, "invalid user id")
+		return
+	}
+	var body struct {
+		Reason string `json:"reason"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Reason == "" {
+		RespondWithError(w, 400, "reason is required")
+		return
+	}
+	//si el usuario no existe, falla con ErrNoRows
+	if _, err := s.db.GetUserBannedAt(r.Context(), userID); errors.Is(err, sql.ErrNoRows) {
+		RespondWithError(w, 404, "user not found")
+		return
+	} else if err != nil {
+		RespondWithError(w, 500, "couldn't look up the user")
+		return
+	}
+
+	//marcar baneo (cierra la puerta: login, middleware y websocket ya lo rechazan)
+	err = s.db.BanUser(r.Context(), database.BanUserParams{
+		UserID:    userID,
+		BanReason: sql.NullString{String: body.Reason, Valid: true},
+	})
+	if err != nil {
+		RespondWithError(w, 500, "couldn't ban the user")
+		return
+	}
+	//revocar todas sus sesiones renovables
+	if err := s.db.RevokeAllUserRefreshTokens(r.Context(), userID); err != nil {
+		log.Printf("admin ban: couldn't revoke tokens for %s: %v", userID, err)
+		RespondWithError(w, 500, "banned, but couldn't revoke tokens; call again")
+		return
+	}
+	//sus reportes pendientes pasan a "actioned"
+	if err := s.db.MarkReportsActioned(r.Context(), uuid.NullUUID{UUID: userID, Valid: true}); err != nil {
+		log.Printf("admin ban: couldn't update reports for %s: %v", userID, err)
+	}
+	//cortar su websocket si está conectado ahora mismo
+	s.hub.disconnectUser(userID)
+
+	log.Printf("admin: banned user %s (%s)", userID, body.Reason)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *state) adminUnbanUser(w http.ResponseWriter, r *http.Request) {
+	userID, err := uuid.Parse(r.PathValue("userID"))
+	if err != nil {
+		RespondWithError(w, 400, "invalid user id")
+		return
+	}
+	if err := s.db.UnbanUser(r.Context(), userID); err != nil {
+		RespondWithError(w, 500, "couldn't unban the user")
+		return
+	}
+	log.Printf("admin: unbanned user %s", userID)
+	w.WriteHeader(http.StatusNoContent)
+}
+
 //el state es el receiver, (el objeto que está ejecutando el método)
 //cuando handlers() escribe s.register, ese s es el mismo que le llegó a handlers(),  necesita recibir la instancia de alguna manera 
 func (s *state) handlers() {
@@ -2810,6 +2882,8 @@ func (s *state) handlers() {
 	http.Handle("POST /reset-password", resetLimiter.middleware(http.HandlerFunc(s.resetPassword)))
 
 	http.Handle("POST /chats/{chatID}/read", s.authMiddleware(http.HandlerFunc(s.markChatRead)))
+	http.Handle("POST /admin/users/{userID}/ban", s.adminMiddleware(http.HandlerFunc(s.adminBanUser)))
+	http.Handle("POST /admin/users/{userID}/unban", s.adminMiddleware(http.HandlerFunc(s.adminUnbanUser)))
 }
 
 

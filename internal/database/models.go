@@ -140,6 +140,8 @@ type User struct {
 	PushMode        string
 	TermsAcceptedAt sql.NullTime
 	TermsVersion    sql.NullString
+	BannedAt        sql.NullTime
+	BanReason       sql.NullString
 }
 
 type UserPhoto struct {

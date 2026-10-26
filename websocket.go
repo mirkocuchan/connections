@@ -85,6 +85,12 @@ func (s *state) wsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+	banned, err := s.isBanned(r.Context(), userID)
+	if err != nil || banned {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
 	//el servidor ya está esperando pedidos HTTP, la app manda pedido, servidor contesta y se corta
 	//queremos dejar abierto para que el servidor hable. para “llamada abierta” la app manda un pedido HTTP especial que dice “quiero mejorar esta conexión a WebSocket” 
 	//accept es la parte del servidor que: mira ese pedido y comprueba que sea válido, dice “dale, desde ahora usamos WebSocket” y te entrega conn, la línea abierta.

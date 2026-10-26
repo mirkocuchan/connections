@@ -13,6 +13,20 @@ import (
 	"github.com/google/uuid"
 )
 
+const banUser = `-- name: BanUser :exec
+UPDATE users SET banned_at = now(), ban_reason = $2 WHERE user_id = $1
+`
+
+type BanUserParams struct {
+	UserID    uuid.UUID
+	BanReason sql.NullString
+}
+
+func (q *Queries) BanUser(ctx context.Context, arg BanUserParams) error {
+	_, err := q.db.ExecContext(ctx, banUser, arg.UserID, arg.BanReason)
+	return err
+}
+
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (username, email, password_hash, date_of_birth, terms_accepted_at, terms_version)
 VALUES (
@@ -23,7 +37,7 @@ VALUES (
     (now() at time zone 'utc'),
     $5
 )
-RETURNING user_id, username, email, password_hash, date_of_birth, created_at, updated_at, display_name, bio, city, country, hobbies, languages, detected_country, global_discovery, push_mode, terms_accepted_at, terms_version
+RETURNING user_id, username, email, password_hash, date_of_birth, created_at, updated_at, display_name, bio, city, country, hobbies, languages, detected_country, global_discovery, push_mode, terms_accepted_at, terms_version, banned_at, ban_reason
 `
 
 type CreateUserParams struct {
@@ -62,6 +76,8 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.PushMode,
 		&i.TermsAcceptedAt,
 		&i.TermsVersion,
+		&i.BannedAt,
+		&i.BanReason,
 	)
 	return i, err
 }
@@ -75,8 +91,19 @@ func (q *Queries) DeleteUser(ctx context.Context, userID uuid.UUID) error {
 	return err
 }
 
+const getUserBannedAt = `-- name: GetUserBannedAt :one
+SELECT banned_at FROM users WHERE user_id = $1
+`
+
+func (q *Queries) GetUserBannedAt(ctx context.Context, userID uuid.UUID) (sql.NullTime, error) {
+	row := q.db.QueryRowContext(ctx, getUserBannedAt, userID)
+	var banned_at sql.NullTime
+	err := row.Scan(&banned_at)
+	return banned_at, err
+}
+
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT user_id, username, email, password_hash, date_of_birth, created_at, updated_at, display_name, bio, city, country, hobbies, languages, detected_country, global_discovery, push_mode, terms_accepted_at, terms_version FROM users WHERE email = $1
+SELECT user_id, username, email, password_hash, date_of_birth, created_at, updated_at, display_name, bio, city, country, hobbies, languages, detected_country, global_discovery, push_mode, terms_accepted_at, terms_version, banned_at, ban_reason FROM users WHERE email = $1
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
@@ -101,12 +128,14 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.PushMode,
 		&i.TermsAcceptedAt,
 		&i.TermsVersion,
+		&i.BannedAt,
+		&i.BanReason,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT user_id, username, email, password_hash, date_of_birth, created_at, updated_at, display_name, bio, city, country, hobbies, languages, detected_country, global_discovery, push_mode, terms_accepted_at, terms_version FROM users WHERE user_id = $1
+SELECT user_id, username, email, password_hash, date_of_birth, created_at, updated_at, display_name, bio, city, country, hobbies, languages, detected_country, global_discovery, push_mode, terms_accepted_at, terms_version, banned_at, ban_reason FROM users WHERE user_id = $1
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, userID uuid.UUID) (User, error) {
@@ -131,6 +160,8 @@ func (q *Queries) GetUserByID(ctx context.Context, userID uuid.UUID) (User, erro
 		&i.PushMode,
 		&i.TermsAcceptedAt,
 		&i.TermsVersion,
+		&i.BannedAt,
+		&i.BanReason,
 	)
 	return i, err
 }
@@ -141,6 +172,15 @@ UPDATE refresh_tokens SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at I
 
 func (q *Queries) RevokeAllUserRefreshTokens(ctx context.Context, userID uuid.UUID) error {
 	_, err := q.db.ExecContext(ctx, revokeAllUserRefreshTokens, userID)
+	return err
+}
+
+const unbanUser = `-- name: UnbanUser :exec
+UPDATE users SET banned_at = NULL, ban_reason = NULL WHERE user_id = $1
+`
+
+func (q *Queries) UnbanUser(ctx context.Context, userID uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, unbanUser, userID)
 	return err
 }
 
@@ -184,7 +224,7 @@ UPDATE users SET
     languages    = COALESCE($6, languages),
     updated_at   = NOW()
 WHERE user_id = $7
-RETURNING user_id, username, email, password_hash, date_of_birth, created_at, updated_at, display_name, bio, city, country, hobbies, languages, detected_country, global_discovery, push_mode, terms_accepted_at, terms_version
+RETURNING user_id, username, email, password_hash, date_of_birth, created_at, updated_at, display_name, bio, city, country, hobbies, languages, detected_country, global_discovery, push_mode, terms_accepted_at, terms_version, banned_at, ban_reason
 `
 
 type UpdateUserParams struct {
@@ -227,6 +267,8 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, e
 		&i.PushMode,
 		&i.TermsAcceptedAt,
 		&i.TermsVersion,
+		&i.BannedAt,
+		&i.BanReason,
 	)
 	return i, err
 }

@@ -54,3 +54,7 @@ SELECT EXISTS (SELECT 1 FROM reports WHERE reporter_id = sqlc.arg('reporter_id')
       AND reason = sqlc.arg('reason')::text
       AND created_at > now() - interval '24 hours'
 );
+
+-- name: MarkReportsActioned :exec
+UPDATE reports SET status = 'actioned', reviewed_at = now()
+WHERE reported_id = $1 AND status = 'pending';

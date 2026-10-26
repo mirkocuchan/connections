@@ -67,6 +67,7 @@ services:
       ACCESS_TOKEN_DURATION: 15m
       REFRESH_TOKEN_DURATION: 720h
       UPLOAD_DIR: /data/uploads
+      ADMIN_KEY: ${ADMIN_KEY}
 
     #no arranca la API hasta que db esté "healthy" (según el healthcheck, si no da error healthy, error unhealthy). evita que el server intente conectarse a una base que todavía arranca.
     #tablas se crean asi: goose -dir sql/schema postgres "postgres://postgres:postgres@localhost:5433/users?sslmode=disable" up

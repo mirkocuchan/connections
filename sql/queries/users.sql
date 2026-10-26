@@ -43,3 +43,12 @@ UPDATE users SET password_hash = $2, updated_at = NOW() WHERE user_id = $1;
 
 -- name: RevokeAllUserRefreshTokens :exec
 UPDATE refresh_tokens SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL;
+
+-- name: GetUserBannedAt :one
+SELECT banned_at FROM users WHERE user_id = $1;
+
+-- name: BanUser :exec
+UPDATE users SET banned_at = now(), ban_reason = $2 WHERE user_id = $1;
+
+-- name: UnbanUser :exec
+UPDATE users SET banned_at = NULL, ban_reason = NULL WHERE user_id = $1;

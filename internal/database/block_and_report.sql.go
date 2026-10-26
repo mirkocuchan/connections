@@ -213,3 +213,13 @@ func (q *Queries) GetBlocksByBlockerID(ctx context.Context, blockerID uuid.UUID)
 	}
 	return items, nil
 }
+
+const markReportsActioned = `-- name: MarkReportsActioned :exec
+UPDATE reports SET status = 'actioned', reviewed_at = now()
+WHERE reported_id = $1 AND status = 'pending'
+`
+
+func (q *Queries) MarkReportsActioned(ctx context.Context, reportedID uuid.NullUUID) error {
+	_, err := q.db.ExecContext(ctx, markReportsActioned, reportedID)
+	return err
+}

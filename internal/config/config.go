@@ -19,6 +19,7 @@ type Config struct {
 	RefreshTokenDuration time.Duration
 	UploadDir string
 	TrustProxy bool
+	AdminKey string
 }
 
 func GetConfig() (Config, error){
@@ -72,6 +73,11 @@ func GetConfig() (Config, error){
 		trustProxy = parsed
 	}
 
+	adminKey := os.Getenv("ADMIN_KEY")
+	if adminKey != "" && len(adminKey) < 32 {
+		return Config{}, errors.New("ADMIN_KEY must be at least 32 characters (or empty to disable admin endpoints)")
+	}
+
 	config := Config{
 		DBURL: dbURL,
 		PORT: port,
@@ -80,6 +86,7 @@ func GetConfig() (Config, error){
 		RefreshTokenDuration: refreshTokenDuration,
 		UploadDir: uploadDir,
 		TrustProxy: trustProxy,
+		AdminKey: adminKey,
 	}
 	return config, nil
 }
