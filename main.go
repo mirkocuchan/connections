@@ -38,6 +38,12 @@ func main() {
 		log.Fatalf("error connecting to db: %v", err)
 	}
 	defer db.Close()
+	var mailer Mailer = logMailer{}
+	if cfg.ResendAPIKey != "" {
+		mailer = newResendMailer(cfg.ResendAPIKey, cfg.MailFrom)
+	} else {
+		log.Println("warning: RESEND_API_KEY not set, emails will only be printed to the log")
+	}
 
 	//luego, creamos un objeto queries que es una estructura que guarda la db connection
 	dbQueries := database.New(db)
@@ -46,7 +52,7 @@ func main() {
 		db:     dbQueries,
 		cfg:    &cfg,
 		hub:    newHub(),
-		mailer: logMailer{},
+		mailer: mailer,
 	}
 	//inicializo la libreta con los handlers, me va a permitir usar las rutas y las funciones
 	programState.handlers()

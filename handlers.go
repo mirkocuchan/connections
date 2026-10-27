@@ -633,6 +633,20 @@ func (s *state) updateFields(w http.ResponseWriter, r *http.Request){
 	})
 }
 
+//myReveals: qué datos míos ya le revelé a la otra persona de este chat
+type myReveals struct {
+	Name        bool `json:"name"`
+	DateOfBirth bool `json:"date_of_birth"`
+	City        bool `json:"city"`
+	Country     bool `json:"country"`
+	Photos      bool `json:"photos"`
+	Bio         bool `json:"bio"`
+	Hobbies     bool `json:"hobbies"`
+	Languages   bool `json:"languages"`
+}
+
+func flagOn(b sql.NullBool) bool { return b.Valid && b.Bool }
+
 func (s *state) getUserCard(w http.ResponseWriter, r *http.Request){
 	//the one that is requesting the card
 	userID, err := s.getUserIDFromContext(r)
@@ -674,6 +688,29 @@ func (s *state) getUserCard(w http.ResponseWriter, r *http.Request){
 		RespondWithError(w, 403, "you can't access this profile")
 		return
 	}
+	//lo que YO le revelé a la otra persona: es la ficha donde ella es la creadora y yo el sujeto
+	var mine myReveals
+	outgoing, err := s.db.GetCardWithChatCreatorAndSubject(r.Context(), database.GetCardWithChatCreatorAndSubjectParams{
+		ChatID:    chatID,
+		CreatorID: subjectID,
+		SubjectID: userID,
+	})
+	if err == nil {
+		mine = myReveals{
+			Name:        flagOn(outgoing.DisplayNameVisible),
+			DateOfBirth: flagOn(outgoing.DateOfBirthVisible),
+			City:        flagOn(outgoing.CityVisible),
+			Country:     flagOn(outgoing.CountryVisible),
+			Photos:      flagOn(outgoing.PhotosVisible),
+			Bio:         flagOn(outgoing.BioVisible),
+			Hobbies:     flagOn(outgoing.HobbiesVisible),
+			Languages:   flagOn(outgoing.LanguagesVisible),
+		}
+	} else if err != sql.ErrNoRows {
+		RespondWithError(w, 500, "couldn't read what you revealed")
+		return
+	}
+
 	//cardParams
 	cardParams := database.GetCardWithChatCreatorAndSubjectParams{
 		ChatID: chatID,
@@ -703,6 +740,7 @@ func (s *state) getUserCard(w http.ResponseWriter, r *http.Request){
 		Bio               string `json:"bio_value"`
 		Hobbies           string `json:"hobbies_value"`
 		Languages         string `json:"languages_value"`
+		MyReveals         myReveals `json:"my_reveals"`
 	}
 	isInitiator := chat.UserOneID == userID
 	var subjectForClient *uuid.UUID
@@ -729,7 +767,7 @@ func (s *state) getUserCard(w http.ResponseWriter, r *http.Request){
 		IsInitiator: isInitiator, ChatName: chatName, SubjectID: subjectForClient, Nickname: newCard.Nickname,
 		NotesOnSubject: newCard.NotesOnSubject, DisplayNameVisible: newCard.DisplayNameVisible, DateOfBirthVisible: newCard.DateOfBirthVisible, 
 		CityVisible: newCard.CityVisible, CountryVisible: newCard.CountryVisible, PhotosVisible: newCard.PhotosVisible, BioVisible: newCard.BioVisible, HobbiesVisible: newCard.HobbiesVisible, 
-		LanguagesVisible: newCard.LanguagesVisible, DisplayName: "", DateOfBirth: "", City: "", Country: "", Bio: "", Hobbies: "", Languages: ""})
+		LanguagesVisible: newCard.LanguagesVisible, DisplayName: "", DateOfBirth: "", City: "", Country: "", Bio: "", Hobbies: "", Languages: "", MyReveals: mine})
 		return
 	}
 	
@@ -750,7 +788,7 @@ func (s *state) getUserCard(w http.ResponseWriter, r *http.Request){
 	DateOfBirth: revealOrHiddenDOB(getCardWithSubjectData.DateOfBirthVisible, getCardWithSubjectData.DateOfBirth),
 	City: revealOrHidden(getCardWithSubjectData.CityVisible, getCardWithSubjectData.City), Country: revealOrHidden(getCardWithSubjectData.CountryVisible, getCardWithSubjectData.Country),
 	Bio: revealOrHidden(getCardWithSubjectData.BioVisible, getCardWithSubjectData.Bio), Hobbies: revealOrHidden(getCardWithSubjectData.HobbiesVisible, getCardWithSubjectData.Hobbies),
-	Languages: revealOrHidden(getCardWithSubjectData.LanguagesVisible, getCardWithSubjectData.Languages)})
+	Languages: revealOrHidden(getCardWithSubjectData.LanguagesVisible, getCardWithSubjectData.Languages), MyReveals: mine})
 }
 
 type createNickname struct {

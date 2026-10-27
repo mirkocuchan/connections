@@ -20,6 +20,8 @@ type Config struct {
 	UploadDir string
 	TrustProxy bool
 	AdminKey string
+	ResendAPIKey string
+	MailFrom string
 }
 
 func GetConfig() (Config, error){
@@ -78,6 +80,10 @@ func GetConfig() (Config, error){
 		return Config{}, errors.New("ADMIN_KEY must be at least 32 characters (or empty to disable admin endpoints)")
 	}
 
+	mailFrom := os.Getenv("MAIL_FROM")
+	if mailFrom == "" {
+		mailFrom = "onboarding@resend.dev" //remitente de pruebas de Resend
+	}
 	config := Config{
 		DBURL: dbURL,
 		PORT: port,
@@ -87,6 +93,8 @@ func GetConfig() (Config, error){
 		UploadDir: uploadDir,
 		TrustProxy: trustProxy,
 		AdminKey: adminKey,
+		ResendAPIKey: os.Getenv("RESEND_API_KEY"), 
+		MailFrom: mailFrom,
 	}
 	return config, nil
 }
