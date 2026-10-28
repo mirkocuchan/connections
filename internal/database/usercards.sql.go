@@ -233,6 +233,7 @@ func (q *Queries) GetCardWithSubjectData(ctx context.Context, cardID uuid.UUID) 
 const getDiscoverableUsers = `-- name: GetDiscoverableUsers :many
 SELECT u.user_id, u.username, u.email, u.password_hash, u.date_of_birth, u.created_at, u.updated_at, u.display_name, u.bio, u.city, u.country, u.hobbies, u.languages, u.detected_country, u.global_discovery, u.push_mode, u.terms_accepted_at, u.terms_version, u.banned_at, u.ban_reason FROM users u
 WHERE u.user_id <> $1::uuid
+AND u.banned_at IS NULL
 AND u.user_id NOT IN (
     SELECT user_one_id FROM chats WHERE user_two_id = $1::uuid
     UNION
@@ -244,7 +245,10 @@ AND (
     OR (SELECT me.detected_country FROM users me WHERE me.user_id = $1::uuid) IS NULL
     OR u.detected_country = (SELECT me.detected_country FROM users me WHERE me.user_id = $1::uuid)
 )
-ORDER BY RANDOM() LIMIT 30
+ORDER BY
+    (u.detected_country = (SELECT me.detected_country FROM users me WHERE me.user_id = $1::uuid)) DESC NULLS LAST,
+    RANDOM()
+LIMIT 30
 `
 
 type GetDiscoverableUsersParams struct {
@@ -505,13 +509,17 @@ func (q *Queries) RevealCountryField(ctx context.Context, cardID uuid.UUID) erro
 }
 
 const revealFields = `-- name: RevealFields :exec
-UPDATE cards SET display_name_visible = true, date_of_birth_visible = true, city_visible = true,
-    country_visible = true,
-    photos_visible = true,
-    bio_visible = true,
-    hobbies_visible = true,
-    languages_visible = true
-WHERE card_id = $1
+UPDATE cards c SET
+    display_name_visible  = COALESCE(c.display_name_visible, false)  OR COALESCE(u.display_name, '') <> '',
+    date_of_birth_visible = true,
+    city_visible          = COALESCE(c.city_visible, false)          OR COALESCE(u.city, '') <> '',
+    country_visible       = COALESCE(c.country_visible, false)       OR COALESCE(u.country, '') <> '',
+    photos_visible        = COALESCE(c.photos_visible, false)        OR EXISTS (SELECT 1 FROM user_photos p WHERE p.user_id = u.user_id),
+    bio_visible           = COALESCE(c.bio_visible, false)           OR COALESCE(u.bio, '') <> '',
+    hobbies_visible       = COALESCE(c.hobbies_visible, false)       OR COALESCE(u.hobbies, '') <> '',
+    languages_visible     = COALESCE(c.languages_visible, false)     OR COALESCE(u.languages, '') <> ''
+FROM users u
+WHERE c.card_id = $1 AND u.user_id = c.subject_id
 `
 
 func (q *Queries) RevealFields(ctx context.Context, cardID uuid.UUID) error {
@@ -566,6 +574,7 @@ LEFT JOIN LATERAL (
 ) p ON true
 WHERE u.username ILIKE '%' || $1::text || '%'
 AND u.user_id <> $2::uuid
+AND u.banned_at IS NULL
 AND u.user_id NOT IN (
     SELECT user_one_id FROM chats WHERE user_two_id = $2::uuid
     UNION

@@ -134,17 +134,20 @@ func (s *state) login(w http.ResponseWriter, r *http.Request){
 		return
 	}
 	user, err := s.db.GetUserByEmail(r.Context(), params.Email)
-	if err != nil{
-		RespondWithError(w, 400, "Incorrect email or password")
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+				RespondWithError(w, 401, "Incorrect email or password")
+				return
+		}
+		RespondWithError(w, 500, "couldn't verify the account")
 		return
 	}
 
 	rightPassword, err := auth.CheckPasswordHash(params.Password, user.PasswordHash)
-	if err != nil{
-		RespondWithError(w, 400, "Incorrect email or password")
-		return
+	if err != nil {
+		log.Printf("login: error comparing password hash: %v", err)
 	}
-	if rightPassword == false{
+	if err != nil || !rightPassword {
 		RespondWithError(w, 401, "Incorrect email or password")
 		return
 	}

@@ -39,13 +39,17 @@ UPDATE cards SET notes_on_subject = $1, updated_at = Now() WHERE card_id = $2
 RETURNING *;
 
 -- name: RevealFields :exec
-UPDATE cards SET display_name_visible = true, date_of_birth_visible = true, city_visible = true,
-    country_visible = true,
-    photos_visible = true,
-    bio_visible = true,
-    hobbies_visible = true,
-    languages_visible = true
-WHERE card_id = $1;
+UPDATE cards c SET
+    display_name_visible  = COALESCE(c.display_name_visible, false)  OR COALESCE(u.display_name, '') <> '',
+    date_of_birth_visible = true,
+    city_visible          = COALESCE(c.city_visible, false)          OR COALESCE(u.city, '') <> '',
+    country_visible       = COALESCE(c.country_visible, false)       OR COALESCE(u.country, '') <> '',
+    photos_visible        = COALESCE(c.photos_visible, false)        OR EXISTS (SELECT 1 FROM user_photos p WHERE p.user_id = u.user_id),
+    bio_visible           = COALESCE(c.bio_visible, false)           OR COALESCE(u.bio, '') <> '',
+    hobbies_visible       = COALESCE(c.hobbies_visible, false)       OR COALESCE(u.hobbies, '') <> '',
+    languages_visible     = COALESCE(c.languages_visible, false)     OR COALESCE(u.languages, '') <> ''
+FROM users u
+WHERE c.card_id = $1 AND u.user_id = c.subject_id;
 
 -- name: RevealCityField :exec
 UPDATE cards SET city_visible = true WHERE card_id = $1;
@@ -122,6 +126,7 @@ SELECT * FROM cards WHERE chat_id = $1 AND creator_id = $2 AND subject_id = $3;
 -- name: GetDiscoverableUsers :many
 SELECT u.* FROM users u
 WHERE u.user_id <> sqlc.arg(user_id)::uuid
+AND u.banned_at IS NULL
 AND u.user_id NOT IN (
     SELECT user_one_id FROM chats WHERE user_two_id = sqlc.arg(user_id)::uuid
     UNION
@@ -133,7 +138,10 @@ AND (
     OR (SELECT me.detected_country FROM users me WHERE me.user_id = sqlc.arg(user_id)::uuid) IS NULL
     OR u.detected_country = (SELECT me.detected_country FROM users me WHERE me.user_id = sqlc.arg(user_id)::uuid)
 )
-ORDER BY RANDOM() LIMIT 30;
+ORDER BY
+    (u.detected_country = (SELECT me.detected_country FROM users me WHERE me.user_id = sqlc.arg(user_id)::uuid)) DESC NULLS LAST,
+    RANDOM()
+LIMIT 30;
 --tuve que usar un alias para la u porque no le gustaba el anidamiento de users
 
 -- name: GetPrimaryUserPhoto :one
@@ -157,6 +165,7 @@ LEFT JOIN LATERAL (
 -- para cada usuario u, ejecuta la subconsulta usando su u.user_id. LEFT: si la subconsulta no devuelve nada (usuario sin fotos), el usuario se conserva igual
 WHERE u.username ILIKE '%' || sqlc.arg(query)::text || '%'
 AND u.user_id <> sqlc.arg(user_id)::uuid
+AND u.banned_at IS NULL
 AND u.user_id NOT IN (
     SELECT user_one_id FROM chats WHERE user_two_id = sqlc.arg(user_id)::uuid
     UNION
