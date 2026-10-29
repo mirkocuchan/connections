@@ -106,7 +106,22 @@ func (s *state) wsHandler(w http.ResponseWriter, r *http.Request) {
 	log.Printf("ws: conectado")
 
 	//closeRead lee en segundo plano (necesario para procesar pongs y cierres) y devuelve un ctx que se cancela cuando el cliente se va (multiples razones, ya segundo plano). si no hacemos esto, el select de abajo nunca termina y la goroutine queda colgada.
-	ctx := conn.CloseRead(r.Context())
+	//ctx := conn.CloseRead(r.Context())
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+
+	//leemos lo que manda la app en una goroutine aparte. al leer, la librería también procesa pings y cierres.
+	go func() {
+		defer cancel() //si la lectura falla la conexión murió: el for de abajo lo ve por ctx.Done()
+		var lastTyping time.Time
+		for {
+			_, data, err := conn.Read(ctx)
+			if err != nil {
+				return
+			}
+			s.handleClientEvent(ctx, userID, data, &lastTyping)
+		}
+	}()
 
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
@@ -158,4 +173,47 @@ type wsEvent struct {
 func (s *state) emitNewMessage(chatID, recipientID uuid.UUID, m wsMessage) {
 	m.IsMine = false
 	s.hub.sendToUser(recipientID, wsEvent{Type: "new_message", ChatID: chatID, Message: m})
+}
+
+type clientEvent struct {
+	Type   string    `json:"type"`
+	ChatID uuid.UUID `json:"chat_id"`
+}
+
+type typingEvent struct {
+	Type   string    `json:"type"`
+	ChatID uuid.UUID `json:"chat_id"`
+}
+
+//handleClientEvent procesa lo que manda la app por el socket. por ahora solo "typing".
+func (s *state) handleClientEvent(ctx context.Context, userID uuid.UUID, data []byte, lastTyping *time.Time) {
+	var ev clientEvent
+	if err := json.Unmarshal(data, &ev); err != nil || ev.Type != "typing" {
+		return
+	}
+	//como mucho un aviso por segundo por conexión, para que nadie inunde al servidor
+	if time.Since(*lastTyping) < time.Second {
+		return
+	}
+	*lastTyping = time.Now()
+
+	chat, err := s.db.GetChatByID(ctx, ev.ChatID)
+	if err != nil {
+		return
+	}
+	var otherID uuid.UUID
+	switch userID {
+	case chat.UserOneID:
+		otherID = chat.UserTwoID
+	case chat.UserTwoID:
+		otherID = chat.UserOneID
+	default:
+		return //no es parte de este chat
+	}
+	
+	blocked, err := s.isBlocked(ctx, userID, otherID)
+	if err != nil || blocked {
+		return
+	}
+	s.hub.sendToUser(otherID, typingEvent{Type: "typing", ChatID: ev.ChatID})
 }
