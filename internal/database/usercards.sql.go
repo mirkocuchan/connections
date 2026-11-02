@@ -472,40 +472,61 @@ func (q *Queries) ResetCard(ctx context.Context, cardID uuid.UUID) error {
 	return err
 }
 
-const revealBioField = `-- name: RevealBioField :exec
-UPDATE cards SET bio_visible = true WHERE card_id = $1
+const revealBioField = `-- name: RevealBioField :execrows
+UPDATE cards c SET bio_visible = true
+FROM users u
+WHERE c.card_id = $1 AND u.user_id = c.subject_id
+  AND btrim(COALESCE(u.bio, '')) <> ''
 `
 
-func (q *Queries) RevealBioField(ctx context.Context, cardID uuid.UUID) error {
-	_, err := q.db.ExecContext(ctx, revealBioField, cardID)
-	return err
+func (q *Queries) RevealBioField(ctx context.Context, cardID uuid.UUID) (int64, error) {
+	result, err := q.db.ExecContext(ctx, revealBioField, cardID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
-const revealBirthField = `-- name: RevealBirthField :exec
+const revealBirthField = `-- name: RevealBirthField :execrows
 UPDATE cards SET date_of_birth_visible = true WHERE card_id = $1
 `
 
-func (q *Queries) RevealBirthField(ctx context.Context, cardID uuid.UUID) error {
-	_, err := q.db.ExecContext(ctx, revealBirthField, cardID)
-	return err
+func (q *Queries) RevealBirthField(ctx context.Context, cardID uuid.UUID) (int64, error) {
+	result, err := q.db.ExecContext(ctx, revealBirthField, cardID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
-const revealCityField = `-- name: RevealCityField :exec
-UPDATE cards SET city_visible = true WHERE card_id = $1
+const revealCityField = `-- name: RevealCityField :execrows
+UPDATE cards c SET city_visible = true
+FROM users u
+WHERE c.card_id = $1 AND u.user_id = c.subject_id
+  AND btrim(COALESCE(u.city, '')) <> ''
 `
 
-func (q *Queries) RevealCityField(ctx context.Context, cardID uuid.UUID) error {
-	_, err := q.db.ExecContext(ctx, revealCityField, cardID)
-	return err
+func (q *Queries) RevealCityField(ctx context.Context, cardID uuid.UUID) (int64, error) {
+	result, err := q.db.ExecContext(ctx, revealCityField, cardID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
-const revealCountryField = `-- name: RevealCountryField :exec
-UPDATE cards SET country_visible = true WHERE card_id = $1
+const revealCountryField = `-- name: RevealCountryField :execrows
+UPDATE cards c SET country_visible = true
+FROM users u
+WHERE c.card_id = $1 AND u.user_id = c.subject_id
+  AND btrim(COALESCE(u.country, '')) <> ''
 `
 
-func (q *Queries) RevealCountryField(ctx context.Context, cardID uuid.UUID) error {
-	_, err := q.db.ExecContext(ctx, revealCountryField, cardID)
-	return err
+func (q *Queries) RevealCountryField(ctx context.Context, cardID uuid.UUID) (int64, error) {
+	result, err := q.db.ExecContext(ctx, revealCountryField, cardID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const revealFields = `-- name: RevealFields :exec
@@ -527,40 +548,63 @@ func (q *Queries) RevealFields(ctx context.Context, cardID uuid.UUID) error {
 	return err
 }
 
-const revealHobbiesField = `-- name: RevealHobbiesField :exec
-UPDATE cards SET hobbies_visible = true WHERE card_id = $1
+const revealHobbiesField = `-- name: RevealHobbiesField :execrows
+UPDATE cards c SET hobbies_visible = true
+FROM users u
+WHERE c.card_id = $1 AND u.user_id = c.subject_id
+  AND btrim(COALESCE(u.hobbies, '')) <> ''
 `
 
-func (q *Queries) RevealHobbiesField(ctx context.Context, cardID uuid.UUID) error {
-	_, err := q.db.ExecContext(ctx, revealHobbiesField, cardID)
-	return err
+func (q *Queries) RevealHobbiesField(ctx context.Context, cardID uuid.UUID) (int64, error) {
+	result, err := q.db.ExecContext(ctx, revealHobbiesField, cardID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
-const revealLanguagesField = `-- name: RevealLanguagesField :exec
-UPDATE cards SET languages_visible = true WHERE card_id = $1
+const revealLanguagesField = `-- name: RevealLanguagesField :execrows
+UPDATE cards c SET languages_visible = true
+FROM users u
+WHERE c.card_id = $1 AND u.user_id = c.subject_id
+  AND btrim(COALESCE(u.languages, '')) <> ''
 `
 
-func (q *Queries) RevealLanguagesField(ctx context.Context, cardID uuid.UUID) error {
-	_, err := q.db.ExecContext(ctx, revealLanguagesField, cardID)
-	return err
+func (q *Queries) RevealLanguagesField(ctx context.Context, cardID uuid.UUID) (int64, error) {
+	result, err := q.db.ExecContext(ctx, revealLanguagesField, cardID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
-const revealNameField = `-- name: RevealNameField :exec
-UPDATE cards SET display_name_visible = true WHERE card_id = $1
+const revealNameField = `-- name: RevealNameField :execrows
+UPDATE cards c SET display_name_visible = true
+FROM users u
+WHERE c.card_id = $1 AND u.user_id = c.subject_id
+  AND btrim(COALESCE(u.display_name, '')) <> ''
 `
 
-func (q *Queries) RevealNameField(ctx context.Context, cardID uuid.UUID) error {
-	_, err := q.db.ExecContext(ctx, revealNameField, cardID)
-	return err
+func (q *Queries) RevealNameField(ctx context.Context, cardID uuid.UUID) (int64, error) {
+	result, err := q.db.ExecContext(ctx, revealNameField, cardID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
-const revealPhotosField = `-- name: RevealPhotosField :exec
-UPDATE cards SET photos_visible = true WHERE card_id = $1
+const revealPhotosField = `-- name: RevealPhotosField :execrows
+UPDATE cards c SET photos_visible = true
+WHERE c.card_id = $1
+  AND EXISTS (SELECT 1 FROM user_photos p WHERE p.user_id = c.subject_id)
 `
 
-func (q *Queries) RevealPhotosField(ctx context.Context, cardID uuid.UUID) error {
-	_, err := q.db.ExecContext(ctx, revealPhotosField, cardID)
-	return err
+func (q *Queries) RevealPhotosField(ctx context.Context, cardID uuid.UUID) (int64, error) {
+	result, err := q.db.ExecContext(ctx, revealPhotosField, cardID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const searchUsersByUsername = `-- name: SearchUsersByUsername :many

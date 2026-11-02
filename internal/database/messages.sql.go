@@ -228,7 +228,13 @@ func (q *Queries) GetMessagesBySenderID(ctx context.Context, senderID uuid.UUID)
 }
 
 const getMessagesPage = `-- name: GetMessagesPage :many
-SELECT m.message_id, m.chat_id, m.sender_id, m.content, m.created_at, m.updated_at, m.story_id, m.is_story_reply, s.media_url AS story_media_url, s.media_type AS story_media_type
+SELECT m.message_id, m.chat_id, m.sender_id, m.content, m.created_at, m.updated_at, m.story_id, m.is_story_reply, s.media_url AS story_media_url, s.media_type AS story_media_type,
+       EXISTS (
+           SELECT 1 FROM chat_reads r
+           WHERE r.chat_id = m.chat_id
+             AND r.user_id <> m.sender_id
+             AND r.last_read_at >= m.created_at
+       ) AS read_by_other
 FROM messages m
 LEFT JOIN stories s --por si hay mensajes a historias
        ON s.story_id = m.story_id
@@ -261,6 +267,7 @@ type GetMessagesPageRow struct {
 	IsStoryReply   bool
 	StoryMediaUrl  sql.NullString
 	StoryMediaType sql.NullString
+	ReadByOther    bool
 }
 
 func (q *Queries) GetMessagesPage(ctx context.Context, arg GetMessagesPageParams) ([]GetMessagesPageRow, error) {
@@ -288,6 +295,7 @@ func (q *Queries) GetMessagesPage(ctx context.Context, arg GetMessagesPageParams
 			&i.IsStoryReply,
 			&i.StoryMediaUrl,
 			&i.StoryMediaType,
+			&i.ReadByOther,
 		); err != nil {
 			return nil, err
 		}

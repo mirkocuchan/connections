@@ -19,7 +19,7 @@ type resendMailer struct {
 func newResendMailer(apiKey, fromAddress string) resendMailer {
 	return resendMailer{
 		apiKey: apiKey,
-		from:   fmt.Sprintf("Connections <%s>", fromAddress), //nombre visible + dirección
+		from:   fmt.Sprintf("Antifaz <%s>", fromAddress), //nombre visible + dirección
 		client: &http.Client{Timeout: 10 * time.Second},     //si Resend no contesta, no colgamos la API
 	}
 }

@@ -40,7 +40,13 @@ VALUES (
 RETURNING *;
 
 -- name: GetMessagesPage :many
-SELECT m.*, s.media_url AS story_media_url, s.media_type AS story_media_type
+SELECT m.*, s.media_url AS story_media_url, s.media_type AS story_media_type,
+       EXISTS (
+           SELECT 1 FROM chat_reads r
+           WHERE r.chat_id = m.chat_id
+             AND r.user_id <> m.sender_id
+             AND r.last_read_at >= m.created_at
+       ) AS read_by_other
 FROM messages m
 LEFT JOIN stories s --por si hay mensajes a historias
        ON s.story_id = m.story_id

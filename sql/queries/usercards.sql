@@ -51,28 +51,48 @@ UPDATE cards c SET
 FROM users u
 WHERE c.card_id = $1 AND u.user_id = c.subject_id;
 
--- name: RevealCityField :exec
-UPDATE cards SET city_visible = true WHERE card_id = $1;
+-- name: RevealCityField :execrows
+UPDATE cards c SET city_visible = true
+FROM users u
+WHERE c.card_id = $1 AND u.user_id = c.subject_id
+  AND btrim(COALESCE(u.city, '')) <> '';
 
--- name: RevealCountryField :exec
-UPDATE cards SET country_visible = true WHERE card_id = $1;
+-- name: RevealCountryField :execrows
+UPDATE cards c SET country_visible = true
+FROM users u
+WHERE c.card_id = $1 AND u.user_id = c.subject_id
+  AND btrim(COALESCE(u.country, '')) <> '';
 
--- name: RevealPhotosField :exec
-UPDATE cards SET photos_visible = true WHERE card_id = $1;
+-- name: RevealBioField :execrows
+UPDATE cards c SET bio_visible = true
+FROM users u
+WHERE c.card_id = $1 AND u.user_id = c.subject_id
+  AND btrim(COALESCE(u.bio, '')) <> '';
 
--- name: RevealBioField :exec
-UPDATE cards SET bio_visible = true WHERE card_id = $1;
+-- name: RevealHobbiesField :execrows
+UPDATE cards c SET hobbies_visible = true
+FROM users u
+WHERE c.card_id = $1 AND u.user_id = c.subject_id
+  AND btrim(COALESCE(u.hobbies, '')) <> '';
 
--- name: RevealHobbiesField :exec
-UPDATE cards SET hobbies_visible = true WHERE card_id = $1;
+-- name: RevealLanguagesField :execrows
+UPDATE cards c SET languages_visible = true
+FROM users u
+WHERE c.card_id = $1 AND u.user_id = c.subject_id
+  AND btrim(COALESCE(u.languages, '')) <> '';
 
--- name: RevealLanguagesField :exec
-UPDATE cards SET languages_visible = true WHERE card_id = $1;
+-- name: RevealNameField :execrows
+UPDATE cards c SET display_name_visible = true
+FROM users u
+WHERE c.card_id = $1 AND u.user_id = c.subject_id
+  AND btrim(COALESCE(u.display_name, '')) <> '';
 
--- name: RevealNameField :exec
-UPDATE cards SET display_name_visible = true WHERE card_id = $1;
+-- name: RevealPhotosField :execrows
+UPDATE cards c SET photos_visible = true
+WHERE c.card_id = $1
+  AND EXISTS (SELECT 1 FROM user_photos p WHERE p.user_id = c.subject_id);
 
--- name: RevealBirthField :exec
+-- name: RevealBirthField :execrows
 UPDATE cards SET date_of_birth_visible = true WHERE card_id = $1;
 
 -- name: GetUserPhotos :many

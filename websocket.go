@@ -217,3 +217,13 @@ func (s *state) handleClientEvent(ctx context.Context, userID uuid.UUID, data []
 	}
 	s.hub.sendToUser(otherID, typingEvent{Type: "typing", ChatID: ev.ChatID})
 }
+
+type readEvent struct {
+	Type   string    `json:"type"`
+	ChatID uuid.UUID `json:"chat_id"`
+}
+
+type cardEvent struct {
+	Type   string    `json:"type"`
+	ChatID uuid.UUID `json:"chat_id"`
+}

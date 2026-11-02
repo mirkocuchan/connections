@@ -1,4 +1,4 @@
-# Connections
+# Antifaz
 
 Red social de conexiones anónimas. La idea central: podés hablar con usuarios random sin que sepan quién sos, hasta que decidís (vos, o quien te contactó) revelar tu identidad — de a poco, campo por campo, como un rompecabezas, o de una sola vez.
 

@@ -504,6 +504,7 @@ func (s *state) getMessages(w http.ResponseWriter, r *http.Request){
 		IsStoryReply   bool      `json:"is_story_reply"`
 		StoryMediaURL  *string   `json:"story_media_url,omitempty"`
 		StoryMediaType *string   `json:"story_media_type,omitempty"`
+		ReadByOther    bool      `json:"read_by_other"`
 	}
 	messagesResponse := []messageResponse{}
 	for _, message := range messages {
@@ -524,6 +525,7 @@ func (s *state) getMessages(w http.ResponseWriter, r *http.Request){
 			IsStoryReply:   message.IsStoryReply,
 			StoryMediaURL:  storyURL,
 			StoryMediaType: storyType,
+			ReadByOther:    message.ReadByOther,
 		})
 	}
 	RespondWithJSON(w, 200, messagesResponse)
@@ -744,6 +746,7 @@ func (s *state) getUserCard(w http.ResponseWriter, r *http.Request){
 		Hobbies           string `json:"hobbies_value"`
 		Languages         string `json:"languages_value"`
 		MyReveals         myReveals `json:"my_reveals"`
+		Photos            []string `json:"photos_value"`
 	}
 	isInitiator := chat.UserOneID == userID
 	var subjectForClient *uuid.UUID
@@ -770,7 +773,7 @@ func (s *state) getUserCard(w http.ResponseWriter, r *http.Request){
 		IsInitiator: isInitiator, ChatName: chatName, SubjectID: subjectForClient, Nickname: newCard.Nickname,
 		NotesOnSubject: newCard.NotesOnSubject, DisplayNameVisible: newCard.DisplayNameVisible, DateOfBirthVisible: newCard.DateOfBirthVisible, 
 		CityVisible: newCard.CityVisible, CountryVisible: newCard.CountryVisible, PhotosVisible: newCard.PhotosVisible, BioVisible: newCard.BioVisible, HobbiesVisible: newCard.HobbiesVisible, 
-		LanguagesVisible: newCard.LanguagesVisible, DisplayName: "", DateOfBirth: "", City: "", Country: "", Bio: "", Hobbies: "", Languages: "", MyReveals: mine})
+		LanguagesVisible: newCard.LanguagesVisible, DisplayName: "", DateOfBirth: "", City: "", Country: "", Bio: "", Hobbies: "", Languages: "", Photos: []string{}, MyReveals: mine})
 		return
 	}
 	
@@ -783,6 +786,23 @@ func (s *state) getUserCard(w http.ResponseWriter, r *http.Request){
 		RespondWithError(w, 500, "couldn't get the card data")
 		return
 	}
+	photoURLs := []string{}
+	if flagOn(getCardWithSubjectData.PhotosVisible) || isInitiator {
+		photos, err := s.db.GetUserPhotos(r.Context(), subjectID)
+		if err != nil {
+			RespondWithError(w, 500, "couldn't get the photos")
+			return
+		}
+		for _, p := range photos {
+			photoURLs = append(photoURLs, absoluteURL(r, p.PhotoUrl))
+		}
+	}
+	bioValue := revealOrHidden(getCardWithSubjectData.BioVisible, getCardWithSubjectData.Bio)
+	if isInitiator { //quien inicia ya vio el perfil público de la otra persona
+		if u, err := s.db.GetUserByID(r.Context(), subjectID); err == nil {
+			bioValue = u.Bio.String
+		}
+	}
 	chatName := s.displayNameFor(r.Context(), chatID, userID, subjectID, isInitiator)
 	RespondWithJSON(w, 200, responseCard{CardID: card.CardID, ChatID: chat.ChatID, IsInitiator: isInitiator, ChatName: chatName, SubjectID: subjectForClient, Nickname: card.Nickname,
 	NotesOnSubject: card.NotesOnSubject, DisplayNameVisible: getCardWithSubjectData.DisplayNameVisible, DateOfBirthVisible: getCardWithSubjectData.DateOfBirthVisible, 
@@ -790,8 +810,8 @@ func (s *state) getUserCard(w http.ResponseWriter, r *http.Request){
 	LanguagesVisible: getCardWithSubjectData.LanguagesVisible, DisplayName: revealOrHidden(getCardWithSubjectData.DisplayNameVisible, getCardWithSubjectData.DisplayName),
 	DateOfBirth: revealOrHiddenDOB(getCardWithSubjectData.DateOfBirthVisible, getCardWithSubjectData.DateOfBirth),
 	City: revealOrHidden(getCardWithSubjectData.CityVisible, getCardWithSubjectData.City), Country: revealOrHidden(getCardWithSubjectData.CountryVisible, getCardWithSubjectData.Country),
-	Bio: revealOrHidden(getCardWithSubjectData.BioVisible, getCardWithSubjectData.Bio), Hobbies: revealOrHidden(getCardWithSubjectData.HobbiesVisible, getCardWithSubjectData.Hobbies),
-	Languages: revealOrHidden(getCardWithSubjectData.LanguagesVisible, getCardWithSubjectData.Languages), MyReveals: mine})
+	Bio: bioValue, Hobbies: revealOrHidden(getCardWithSubjectData.HobbiesVisible, getCardWithSubjectData.Hobbies),
+	Languages: revealOrHidden(getCardWithSubjectData.LanguagesVisible, getCardWithSubjectData.Languages), Photos: photoURLs, MyReveals: mine})
 }
 
 type createNickname struct {
@@ -1046,59 +1066,37 @@ func (s *state) revealAField(w http.ResponseWriter, r *http.Request){
 		RespondWithError(w, 500, "couldn't find the card in the database")
 		return
 	}
+	var rows int64
 	switch fieldToReveal {
-		case "city":
-			err = s.db.RevealCityField(r.Context(), card.CardID) 
-			if err != nil{
-				RespondWithError(w, 500, "couldn't reveal that field")
-				return
-			}
-		case "country":
-			err = s.db.RevealCountryField(r.Context(), card.CardID)
-			if err != nil{
-				RespondWithError(w, 500, "couldn't reveal that field")
-				return
-			}
-		case "bio":
-			err = s.db.RevealBioField(r.Context(), card.CardID)
-			if err != nil{
-				RespondWithError(w, 500, "couldn't reveal that field")
-				return
-			}
-		case "date_of_birth":
-			err = s.db.RevealBirthField(r.Context(), card.CardID)
-			if err != nil{
-				RespondWithError(w, 500, "couldn't reveal that field")
-				return
-			}
-		case "name":
-			err = s.db.RevealNameField(r.Context(), card.CardID)
-			if err != nil{
-				RespondWithError(w, 500, "couldn't reveal that field")
-				return
-			}
-		case "hobbies":
-			err = s.db.RevealHobbiesField(r.Context(), card.CardID)
-			if err != nil{
-				RespondWithError(w, 500, "couldn't reveal that field")
-				return
-			}
-		case "languages":
-			err = s.db.RevealLanguagesField(r.Context(), card.CardID)
-			if err != nil{
-				RespondWithError(w, 500, "couldn't reveal that field")
-				return
-			}
-		case "photos":
-			err = s.db.RevealPhotosField(r.Context(), card.CardID)
-			if err != nil{
-				RespondWithError(w, 500, "couldn't reveal that field")
-				return
-			}
-		default:
-			RespondWithError(w, 400, "invalid field")
-			return
+	case "city":
+		rows, err = s.db.RevealCityField(r.Context(), card.CardID)
+	case "country":
+		rows, err = s.db.RevealCountryField(r.Context(), card.CardID)
+	case "bio":
+		rows, err = s.db.RevealBioField(r.Context(), card.CardID)
+	case "date_of_birth":
+		rows, err = s.db.RevealBirthField(r.Context(), card.CardID)
+	case "name":
+		rows, err = s.db.RevealNameField(r.Context(), card.CardID)
+	case "hobbies":
+		rows, err = s.db.RevealHobbiesField(r.Context(), card.CardID)
+	case "languages":
+		rows, err = s.db.RevealLanguagesField(r.Context(), card.CardID)
+	case "photos":
+		rows, err = s.db.RevealPhotosField(r.Context(), card.CardID)
+	default:
+		RespondWithError(w, 400, "invalid field")
+		return
 	}
+	if err != nil {
+		RespondWithError(w, 500, "couldn't reveal that field")
+		return
+	}
+	if rows == 0 {
+		RespondWithError(w, 400, "nothing to reveal for that field")
+		return
+	}
+	s.hub.sendToUser(subjectID, cardEvent{Type: "card_updated", ChatID: chatID})
 	RespondWithJSON(w, 200, map[string]string{"message": "field revealed", "card_id": card.CardID.String()})
 }
 
@@ -1164,7 +1162,7 @@ func (s *state) revealAllFields(w http.ResponseWriter, r *http.Request){
 		RespondWithError(w, 500, "couldn't reveal the fields of this card")
 		return
 	}
-
+	s.hub.sendToUser(subjectID, cardEvent{Type: "card_updated", ChatID: chatID})
 	RespondWithJSON(w, 200, map[string]string{"message": "fields revealed", "card_id": card.CardID.String()})
 }
 
@@ -2774,6 +2772,15 @@ func (s *state) markChatRead(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		RespondWithError(w, 500, "couldn't mark the chat as read")
 		return
+	}
+	
+	otherID := chat.UserOneID
+	if otherID == userID {
+			otherID = chat.UserTwoID
+	}
+	//le avisamos en vivo a la otra persona para que vea "visto", salvo que haya un bloqueo
+	if blocked, err := s.isBlocked(r.Context(), userID, otherID); err == nil && !blocked {
+			s.hub.sendToUser(otherID, readEvent{Type: "chat_read", ChatID: chatID})
 	}
 	RespondWithJSON(w, 200, map[string]string{"status": "success"})
 }

@@ -1,4 +1,4 @@
-# Moderación de Connections
+# Moderación de Antifaz
 
 ## Principios
 - Ningún reporte produce una sanción automática. Toda sanción la decide una persona, mirando la evidencia.
