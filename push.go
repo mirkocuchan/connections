@@ -35,8 +35,8 @@ type expoResponse struct { //es la envoltura de la respuesta de expo, que contie
 	Data []expoTicket `json:"data"`
 }
 
-//sendPush manda una notificación a todos los dispositivos de un usuario.
-//pensada para correr en una goroutine: no devuelve error, solo genera logs. 
+// sendPush manda una notificación a todos los dispositivos de un usuario.
+// pensada para correr en una goroutine: no devuelve error, solo genera logs.
 func (s *state) sendPush(userID uuid.UUID, title, body string, data map[string]any) {
 	//el context del request se cancela cuando el handler responde, entonces tenemos que crear un contexto para que no se nos cierre la ventana.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -71,7 +71,7 @@ func (s *state) sendPush(userID uuid.UUID, title, body string, data map[string]a
 	if err != nil {
 		log.Printf("push: send: %v", err)
 		return
-	}//registra los errores de envío del request, que pueden ser por problemas de red, etc. no son errores de la app.
+	} //registra los errores de envío del request, que pueden ser por problemas de red, etc. no son errores de la app.
 	defer resp.Body.Close() //resp viene como un stream, hay que cerrarlo al final para liberar recursos. si no se cierra, se queda abierto y puede generar problemas de memoria.
 	if resp.StatusCode != http.StatusOK {
 		log.Printf("push: expo returned status %d", resp.StatusCode)
@@ -99,8 +99,8 @@ func (s *state) sendPush(userID uuid.UUID, title, body string, data map[string]a
 	}
 }
 
-//displayNameFor devuelve el nombre que viewerID ve de otherID en un chat.
-//misma regla que getChats: apodo > username real (solo si el viewer inició) > anon. es para no mandar el nombre cuando se es anonimo en las notifciaciones. si el viewer es el que inició el chat, se le muestra el username real del otro usuario, sino se le muestra anon. si hay un apodo, se muestra siempre.
+// displayNameFor devuelve el nombre que viewerID ve de otherID en un chat.
+// misma regla que getChats: apodo > username real (solo si el viewer inició) > anon. es para no mandar el nombre cuando se es anonimo en las notifciaciones. si el viewer es el que inició el chat, se le muestra el username real del otro usuario, sino se le muestra anon. si hay un apodo, se muestra siempre.
 func (s *state) displayNameFor(ctx context.Context, chatID, viewerID, otherID uuid.UUID, viewerIsInitiator bool) string {
 	card, err := s.db.GetCardWithChatCreatorAndSubject(ctx, database.GetCardWithChatCreatorAndSubjectParams{
 		ChatID:    chatID,
@@ -126,7 +126,7 @@ func truncate(text string, n int) string {
 	return string(r[:n]) + "…"
 }
 
-//notifyNewMessage corre entera en una goroutine: calcula el título y manda el push.
+// notifyNewMessage corre entera en una goroutine: calcula el título y manda el push.
 func (s *state) notifyNewMessage(chatID, senderID, recipientID uuid.UUID, recipientIsInitiator bool, content string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -140,7 +140,7 @@ func (s *state) notifyNewMessage(chatID, senderID, recipientID uuid.UUID, recipi
 	if mode == "full" {
 		body = truncate(content, 100)
 	}
-	
+
 	s.sendPush(recipientID, name, body, map[string]any{
 		"chat_id": chatID.String(),
 		"name":    name,

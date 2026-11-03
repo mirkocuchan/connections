@@ -52,3 +52,9 @@ UPDATE users SET banned_at = now(), ban_reason = $2 WHERE user_id = $1;
 
 -- name: UnbanUser :exec
 UPDATE users SET banned_at = NULL, ban_reason = NULL WHERE user_id = $1;
+
+-- name: GetReadReceipts :one
+SELECT read_receipts FROM users WHERE user_id = $1;
+
+-- name: SetReadReceipts :exec
+UPDATE users SET read_receipts = $2 WHERE user_id = $1;

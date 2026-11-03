@@ -1,36 +1,36 @@
 package config
 
 import (
-	"os"
 	"errors"
+	"fmt"
 	"github.com/joho/godotenv"
 	"log"
-	"time"
-	"fmt"
-	"strings"
+	"os"
 	"strconv"
+	"strings"
+	"time"
 )
 
 type Config struct {
-	DBURL string
-	PORT string
-	JWTSecret string
-	AccessTokenDuration time.Duration
+	DBURL                string
+	PORT                 string
+	JWTSecret            string
+	AccessTokenDuration  time.Duration
 	RefreshTokenDuration time.Duration
-	UploadDir string
-	TrustProxy bool
-	AdminKey string
-	ResendAPIKey string
-	MailFrom string
+	UploadDir            string
+	TrustProxy           bool
+	AdminKey             string
+	ResendAPIKey         string
+	MailFrom             string
 }
 
-func GetConfig() (Config, error){
+func GetConfig() (Config, error) {
 	//cargamos el .env para despues poder leerlo, en caso de que no exista, seguimos
 	err := godotenv.Load()
-	if err != nil{
+	if err != nil {
 		log.Println("warning: .env file not found or couldn't be loaded, reading from environment variables")
 	}
-	
+
 	//getting the dbURL from the environment
 	dbURL := os.Getenv("DB_URL")
 	if dbURL == "" {
@@ -55,7 +55,7 @@ func GetConfig() (Config, error){
 	}
 	accessTokenDuration, accessErr := time.ParseDuration(os.Getenv("ACCESS_TOKEN_DURATION"))
 	refreshTokenDuration, refreshErr := time.ParseDuration(os.Getenv("REFRESH_TOKEN_DURATION"))
-		if accessErr != nil {
+	if accessErr != nil {
 		return Config{}, fmt.Errorf("ACCESS_TOKEN_DURATION is missing or invalid (example: 15m): %w", accessErr)
 	}
 	if refreshErr != nil {
@@ -85,16 +85,16 @@ func GetConfig() (Config, error){
 		mailFrom = "onboarding@resend.dev" //remitente de pruebas de Resend
 	}
 	config := Config{
-		DBURL: dbURL,
-		PORT: port,
-		JWTSecret: jwtSecret,
-		AccessTokenDuration: accessTokenDuration,
+		DBURL:                dbURL,
+		PORT:                 port,
+		JWTSecret:            jwtSecret,
+		AccessTokenDuration:  accessTokenDuration,
 		RefreshTokenDuration: refreshTokenDuration,
-		UploadDir: uploadDir,
-		TrustProxy: trustProxy,
-		AdminKey: adminKey,
-		ResendAPIKey: os.Getenv("RESEND_API_KEY"), 
-		MailFrom: mailFrom,
+		UploadDir:            uploadDir,
+		TrustProxy:           trustProxy,
+		AdminKey:             adminKey,
+		ResendAPIKey:         os.Getenv("RESEND_API_KEY"),
+		MailFrom:             mailFrom,
 	}
 	return config, nil
 }

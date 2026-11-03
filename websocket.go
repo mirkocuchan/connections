@@ -13,15 +13,15 @@ import (
 	"github.com/mirkocuchan/connections/internal/auth"
 )
 
-//client = una conexión abierta (un celular, una pestaña).
-//send es su "buzón": otros handlers dejan mensajes ahí y la goroutine de la conexión los escribe al socket.
+// client = una conexión abierta (un celular, una pestaña).
+// send es su "buzón": otros handlers dejan mensajes ahí y la goroutine de la conexión los escribe al socket.
 type client struct {
 	send chan []byte
 }
 
-//hub = quién está conectado. userID -> conjunto de conexiones (un usuario puede tener más de una a la vez). ej: userID de Mirko  →  { conexión del iPhone, conexión de otra pestaña }
+// hub = quién está conectado. userID -> conjunto de conexiones (un usuario puede tener más de una a la vez). ej: userID de Mirko  →  { conexión del iPhone, conexión de otra pestaña }
 type hub struct {
-	mu      sync.RWMutex //protege el mapa clients 
+	mu      sync.RWMutex //protege el mapa clients
 	clients map[uuid.UUID]map[*client]struct{}
 }
 
@@ -47,7 +47,7 @@ func (h *hub) remove(userID uuid.UUID, c *client) {
 	}
 }
 
-//sendToUser manda un evento a todas las conexiones del usuario. si no está conectado no hace nada: el push y el REST cubren ese caso.
+// sendToUser manda un evento a todas las conexiones del usuario. si no está conectado no hace nada: el push y el REST cubren ese caso.
 func (h *hub) sendToUser(userID uuid.UUID, event any) {
 	data, err := json.Marshal(event)
 	if err != nil {
@@ -65,7 +65,7 @@ func (h *hub) sendToUser(userID uuid.UUID, event any) {
 	}
 }
 
-//disconnectUser corta todas las conexiones de un usuario (para logout).
+// disconnectUser corta todas las conexiones de un usuario (para logout).
 func (h *hub) disconnectUser(userID uuid.UUID) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -73,7 +73,7 @@ func (h *hub) disconnectUser(userID uuid.UUID) {
 		close(c.send) //la goroutine ve el canal cerrado y termina
 	}
 	//después del close(c.send), esos client quedan en el mapa con el canal cerrado. el usuario desaparece del hub y nadie le manda nada a canales cerrados.
-	delete(h.clients, userID) 
+	delete(h.clients, userID)
 }
 
 func (s *state) wsHandler(w http.ResponseWriter, r *http.Request) {
@@ -92,7 +92,7 @@ func (s *state) wsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	//el servidor ya está esperando pedidos HTTP, la app manda pedido, servidor contesta y se corta
-	//queremos dejar abierto para que el servidor hable. para “llamada abierta” la app manda un pedido HTTP especial que dice “quiero mejorar esta conexión a WebSocket” 
+	//queremos dejar abierto para que el servidor hable. para “llamada abierta” la app manda un pedido HTTP especial que dice “quiero mejorar esta conexión a WebSocket”
 	//accept es la parte del servidor que: mira ese pedido y comprueba que sea válido, dice “dale, desde ahora usamos WebSocket” y te entrega conn, la línea abierta.
 	conn, err := websocket.Accept(w, r, nil)
 	if err != nil {
@@ -128,7 +128,7 @@ func (s *state) wsHandler(w http.ResponseWriter, r *http.Request) {
 
 	for {
 		select {
-		case <-ctx.Done(): //si se cerro la conexión, se cancela el ctx y termina la goroutine. 
+		case <-ctx.Done(): //si se cerro la conexión, se cancela el ctx y termina la goroutine.
 			return
 		//case mensaje para mandar al cliente: lo leemos del buzon (canal send) y lo escribimos al socket.
 		case msg, ok := <-c.send: //leemos desde el buzon, mismo canal donde sendToUser manda los mensajes. si el canal se cerró (disconnectUser) ok = false y terminamos la goroutine.
@@ -169,7 +169,7 @@ type wsEvent struct {
 	Message wsMessage `json:"message"`
 }
 
-//emitNewMessage avisa en vivo al destinatario. es un "hint": si no está conectado no pasa nada.
+// emitNewMessage avisa en vivo al destinatario. es un "hint": si no está conectado no pasa nada.
 func (s *state) emitNewMessage(chatID, recipientID uuid.UUID, m wsMessage) {
 	m.IsMine = false
 	s.hub.sendToUser(recipientID, wsEvent{Type: "new_message", ChatID: chatID, Message: m})
@@ -185,7 +185,7 @@ type typingEvent struct {
 	ChatID uuid.UUID `json:"chat_id"`
 }
 
-//handleClientEvent procesa lo que manda la app por el socket. por ahora solo "typing".
+// handleClientEvent procesa lo que manda la app por el socket. por ahora solo "typing".
 func (s *state) handleClientEvent(ctx context.Context, userID uuid.UUID, data []byte, lastTyping *time.Time) {
 	var ev clientEvent
 	if err := json.Unmarshal(data, &ev); err != nil || ev.Type != "typing" {
@@ -210,7 +210,7 @@ func (s *state) handleClientEvent(ctx context.Context, userID uuid.UUID, data []
 	default:
 		return //no es parte de este chat
 	}
-	
+
 	blocked, err := s.isBlocked(ctx, userID, otherID)
 	if err != nil || blocked {
 		return

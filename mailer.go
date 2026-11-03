@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-//resendMailer envía mails reales usando la API de Resend
+// resendMailer envía mails reales usando la API de Resend
 type resendMailer struct {
 	apiKey string
 	from   string
@@ -20,7 +20,7 @@ func newResendMailer(apiKey, fromAddress string) resendMailer {
 	return resendMailer{
 		apiKey: apiKey,
 		from:   fmt.Sprintf("Antifaz <%s>", fromAddress), //nombre visible + dirección
-		client: &http.Client{Timeout: 10 * time.Second},     //si Resend no contesta, no colgamos la API
+		client: &http.Client{Timeout: 10 * time.Second},  //si Resend no contesta, no colgamos la API
 	}
 }
 

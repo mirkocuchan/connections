@@ -8,7 +8,7 @@ import (
 	"golang.org/x/time/rate"
 )
 
-//un cubo de fichas por visitante, más cuándo lo vimos por última vez
+// un cubo de fichas por visitante, más cuándo lo vimos por última vez
 type visitor struct {
 	limiter  *rate.Limiter
 	lastSeen time.Time
@@ -31,7 +31,7 @@ func newRateLimiter(every time.Duration, burst int) *rateLimiter {
 	return rl
 }
 
-//allow devuelve true si esta clave todavía tiene fichas, y gasta una
+// allow devuelve true si esta clave todavía tiene fichas, y gasta una
 func (rl *rateLimiter) allow(key string) bool {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
@@ -45,7 +45,7 @@ func (rl *rateLimiter) allow(key string) bool {
 	return v.limiter.Allow()
 }
 
-//cleanup borra a los visitantes que no aparecen hace rato, si no el mapa crecería para siempre
+// cleanup borra a los visitantes que no aparecen hace rato, si no el mapa crecería para siempre
 func (rl *rateLimiter) cleanup() {
 	for {
 		time.Sleep(5 * time.Minute)
@@ -59,7 +59,7 @@ func (rl *rateLimiter) cleanup() {
 	}
 }
 
-//middleware envuelve un handler y si no quedan fichas, corta con 429
+// middleware envuelve un handler y si no quedan fichas, corta con 429
 func (rl *rateLimiter) middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ip := getClientIP(r)

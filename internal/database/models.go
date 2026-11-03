@@ -142,6 +142,7 @@ type User struct {
 	TermsVersion    sql.NullString
 	BannedAt        sql.NullTime
 	BanReason       sql.NullString
+	ReadReceipts    bool
 }
 
 type UserPhoto struct {
