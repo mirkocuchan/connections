@@ -18,6 +18,9 @@ func RespondWithError(w http.ResponseWriter, code int, message string) {
 	errorMessage := ErrorResponse{
 		Message: message,
 	}
+	if code >= 500 {
+		log.Printf("HTTP %d: %s", code, message)
+	}
 	//lo convierte a []byte para poder mandarselo a w.Write
 	jsonErrorText, err := json.Marshal(errorMessage)
 	if err != nil {

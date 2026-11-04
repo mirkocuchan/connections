@@ -1,0 +1,75 @@
+#PRODUCCIÓN (antifaz). los secretos vienen del .env del servidor, nunca se escriben acá.
+name: antifaz
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: users
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d users"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    #sin "ports": la base NO es accesible desde internet, solo desde la red interna
+
+  api:
+    build: ..
+    restart: unless-stopped
+    volumes:
+      - uploads:/data/uploads
+    environment:
+      DB_URL: postgres://postgres:${POSTGRES_PASSWORD}@db:5432/users?sslmode=disable
+      PORT: ":8080"
+      JWT_SECRET: ${JWT_SECRET}
+      ACCESS_TOKEN_DURATION: 15m
+      REFRESH_TOKEN_DURATION: 720h
+      UPLOAD_DIR: /data/uploads
+      TRUST_PROXY: "true"
+      ADMIN_KEY: ${ADMIN_KEY:-}
+      RESEND_API_KEY: ${RESEND_API_KEY}
+      MAIL_FROM: ${MAIL_FROM}
+    depends_on:
+      db:
+        condition: service_healthy
+    # sin "ports": solo Caddy le habla
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+
+  #herramienta de una sola vez: aplica las migraciones. No arranca con "up".
+  migrate:
+    image: golang:1.26-alpine
+    profiles: ["tools"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ../sql/schema:/migrations:ro
+    command: >
+      sh -c "go install github.com/pressly/goose/v3/cmd/goose@latest &&
+      /go/bin/goose -dir /migrations postgres
+      \"postgres://postgres:$$POSTGRES_PASSWORD@db:5432/users?sslmode=disable\" up"
+
+volumes:
+  pgdata:
+  uploads:
+  caddy_data:
+  caddy_config:

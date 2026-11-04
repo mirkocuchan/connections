@@ -1,0 +1,9 @@
+api.antifaz.app {
+	encode zstd gzip
+
+	#las rutas de admin no se exponen a internet
+	@admin path /admin /admin/*
+	respond @admin 404
+
+	reverse_proxy api:8080
+}
