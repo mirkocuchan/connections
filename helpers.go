@@ -13,6 +13,7 @@ import (
 	"github.com/mirkocuchan/connections/internal/database"
 	"log"
 	"net"
+	"net/mail"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -313,4 +314,28 @@ func (s *state) isBanned(ctx context.Context, userID uuid.UUID) (bool, error) {
 		return false, err
 	}
 	return bannedAt.Valid, nil //valid=true significa que banned_at tiene una fecha, entonces fue baneado
+}
+
+// validEmail: formato correcto + el dominio existe y recibe mails.
+func validEmail(email string) bool {
+	addr, err := mail.ParseAddress(email)
+	if err != nil || addr.Address != email {
+		return false
+	}
+	at := strings.LastIndex(email, "@")
+	domain := email[at+1:]
+	if !strings.Contains(domain, ".") {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	mx, err := net.DefaultResolver.LookupMX(ctx, domain)
+	if err != nil {
+		var dnsErr *net.DNSError
+		if errors.As(err, &dnsErr) && dnsErr.IsNotFound {
+			return false
+		}
+		return true //falla temporal de DNS: no bloqueamos a un usuario válido
+	}
+	return len(mx) > 0
 }

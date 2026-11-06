@@ -42,6 +42,11 @@ func (s *state) register(w http.ResponseWriter, r *http.Request) {
 		RespondWithError(w, 400, "error unmarshalling JSON")
 		return
 	}
+	user.Email = strings.ToLower(strings.TrimSpace(user.Email))
+	if !validEmail(user.Email) {
+		RespondWithError(w, 400, "Ingresá un mail válido")
+		return
+	}
 	dob := time.Time(user.DateOfBirth)
 	now := time.Now().UTC()
 	if dob.IsZero() || dob.After(now) || dob.Year() < 1900 {
@@ -57,7 +62,7 @@ func (s *state) register(w http.ResponseWriter, r *http.Request) {
 		RespondWithError(w, 400, "Tenés que aceptar los términos y condiciones")
 		return
 	}
-
+	
 	hashedPassword, err := auth.HashPassword(user.Password)
 	if err != nil {
 		RespondWithError(w, 400, "error hashing the password")
